@@ -175,18 +175,15 @@ export const listActivities = asyncHandler(async (req, resp) => {
 
     if (!isValid) return resp.json({ status: 0, code: 422, message: errors });
 
-    const activities = await getRecords(
-        'activities',
-        ['id', 'user_id', 'name', 'description', 'count_type', 'activity_type', 'created_at', 'updated_at'],
-        'user_id',
-        user_id
-    );
+    const [[activities]] = await db.execute(`SELECT name,description,count_type,count_type
+         FROM activities WHERE user_id=?`,[user_id]);
 
-    if (activities && activities.length > 0) {
-        return resp.json({ status: 1, code: 200, data: activities });
-    }
-
+    if (activities && activities.length=== 0) {
     return resp.json({ status: 0, code: 404, message: ['No activities found for this user'] });
+    }
+    return resp.json({ status: 1, code: 200, data: activities });
+
+
 });
 
 

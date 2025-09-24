@@ -10,16 +10,11 @@ const pool = mysql.createPool({
         database           : process.env.DB_NAME,
         port               : process.env.DB_PORT,
         waitForConnections : true,
+         ssl: {
+    rejectUnauthorized: true
+  }
         // queueLimit         : 0
     // connectTimeout     : 10000,
-});
-
-console.log("DB CONFIG", {
-  host: process.env.DB_HOST,
-  user: process.env.DB_USERNAME,
-  password: process.env.DB_PASSWORD,
-  database: process.env.DB_NAME,
-  port: process.env.DB_PORT
 });
 
 console.log("india databse")
