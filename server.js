@@ -2,7 +2,7 @@ import express from 'express';
 import bodyParser from 'body-parser';
 import commonRoutes from './routes/CommonRoutes.js';
 import StudentRoutes from './SadhanaGPT/Student/Routes/StudentRoutes.js'
-
+import counslerRoutes from './SadhanaGPT/counsellor/Routes/CounsllerRoutes.js'
 
 import path from 'path';
 import cors from 'cors';
@@ -45,6 +45,8 @@ app.use(cookieParser());
 
 app.use(errorHandler);
 app.use('/api',StudentRoutes );
+app.use('/counsller-api',counslerRoutes );
+
 
 app.use('/common',commonRoutes );
 const server = http.createServer(app);
