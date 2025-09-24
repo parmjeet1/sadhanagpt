@@ -3,7 +3,7 @@ import dotenv from 'dotenv';
 
 
 dotenv.config();
-const pool = mysql.createPool({
+const db = mysql.createdb({
         host               : process.env.DB_HOST,
         user               : process.env.DB_USERNAME,
         password           : process.env.DB_PASSWORD,
@@ -18,4 +18,4 @@ const pool = mysql.createPool({
 });
 
 console.log("india databse")
-export default pool;
+export default db;
