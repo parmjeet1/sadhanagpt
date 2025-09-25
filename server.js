@@ -28,6 +28,7 @@ const __dirname = path.dirname(__filename);
 const corsOptions = {
     origin : [
        
+        'http://100.91.77.127:2424',
         'http://192.168.1.37:2424',
         'http://192.168.1.29:1112',
       
@@ -44,7 +45,11 @@ app.use(express.urlencoded({ extended: true }));
 app.use(express.json());
 app.use(bodyParser.json());
 app.use(cookieParser());
+app.get('/ping', (req, res) => {
+  return res.json({status:1 , code:200 , message:"server is alive"})
+    //   res.send('Server is alive');
 
+});
 
 app.use(errorHandler);
 app.use('/api',StudentRoutes );
@@ -58,16 +63,21 @@ server.listen(PORT, () => {
 });
 
 
-cron.schedule('*/13 * * * *', async () => {
+cron.schedule('*/3 * * * *', async () => {
   try {
-    console.log('Cron job started at:', new Date());
-
+   //ping
+    // const response = await axios.get(
+    //   'https://sadhanagpt.onrender.com/counsller-api/counsller-list',
+    //   {
+    //     headers: {
+    //       Authorization: process.env.API_AUTH_KEY, // replace with your token
+    //     },
+    //   }
+    // );
     const response = await axios.get(
-      'https://sadhanagpt.onrender.com/counsller-api/counsller-list',
+      'https://sadhanagpt.onrender.com/ping',
       {
-        headers: {
-          Authorization: process.env.API_AUTH_KEY, // replace with your token
-        },
+        
       }
     );
 
@@ -77,3 +87,4 @@ cron.schedule('*/13 * * * *', async () => {
     console.error('Error in cron job:', error.message);
   }
 });
+

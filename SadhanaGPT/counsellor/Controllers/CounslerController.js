@@ -9,7 +9,8 @@ import crypto from "crypto"
 
 export const counslerRegister = asyncHandler(async (req, resp) => {
 const {name,temple,country_code="+91",user_type='counsellor',mobile,email,password,added_from='andorid',device_name="web"}=mergeParam(req)
- const { isValid, errors } = validateFields(mergeParam(req), {
+console.log("recived") 
+const { isValid, errors } = validateFields(mergeParam(req), {
         name               : ["required"],
         mobile             : ["required"],
         email              : ["required"],
