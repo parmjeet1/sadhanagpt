@@ -1,3 +1,6 @@
+
+import cron from 'node-cron';
+import axios from 'axios';
 import express from 'express';
 import bodyParser from 'body-parser';
 import commonRoutes from './routes/CommonRoutes.js';
@@ -52,4 +55,25 @@ app.use('/common',commonRoutes );
 const server = http.createServer(app);
 server.listen(PORT, () => {
     console.log(`Server is running on http://localhost:${PORT}`);
+});
+
+
+cron.schedule('*/1 * * * *', async () => {
+  try {
+    console.log('Cron job started at:', new Date());
+
+    const response = await axios.get(
+      'https://sadhanagpt.onrender.com/counsller-api/counsller-list',
+      {
+        headers: {
+          Authorization: process.env.API_AUTH_KEY, // replace with your token
+        },
+      }
+    );
+
+    console.log('API Response:', response.data);
+    console.log('Cron job finished at:', new Date());
+  } catch (error) {
+    console.error('Error in cron job:', error.message);
+  }
 });

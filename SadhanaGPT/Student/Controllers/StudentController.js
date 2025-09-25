@@ -103,7 +103,7 @@ export const addactivity= asyncHandler(async(req,resp)=>{
 const { isValid, errors } = validateFields(mergeParam(req), {
         user_id: ["required"], 
         name: ["required"],
-        description: ["required"],
+        // description: ["required"],
         count_type: ["required"],
         activity_type: ["required"],
         
@@ -115,7 +115,7 @@ const { isValid, errors } = validateFields(mergeParam(req), {
         [user_id,name,description,count_type,activity_type]
      );
      if(insert_data){
-        return resp.json({status:1,code:200,message:['report added successfully!']})
+        return resp.json({status:1,code:200,message:['activity added successfully!']})
      }
 
 
@@ -196,17 +196,64 @@ export const listActivities = asyncHandler(async (req, resp) => {
 
 
 });
+export const todayReport = asyncHandler(async (req, resp) => {
+    const { user_id } = req.body;
+
+    const { isValid, errors } = validateFields(mergeParam(req), {
+        user_id: ["required"],
+    });
+
+    if (!isValid) return resp.json({ status: 0, code: 422, message: errors });
+
+    const [user_activities] = await db.execute(`SELECT 
+      a.name, a.count_type, a.activity_type, r.note,r.activity_id,r.count
+       from daily_report r
+       JOIN activities a on r.activity_id=a.id
+       where  r.user_id=?
+        `,[user_id]);
+
+        const [fix_activities] = await db.execute(`SELECT 
+      fa.name, fa.count_type, fa.activity_type, dr.note,dr.activity_id,dr.count
+       from daily_report dr 
+       LEFT JOIN fix_activities fa ON  fa.acitivity_id=dr.activity_id
+       where  dr.user_id=?
+        `,[user_id]);
+
+       
+
+
+    // if (!fix_activities && fix_activities.length=== 0 || user_activities) {
+    // return resp.json({ status: 0, code: 404, message: ['No activities found for this user'] });
+    // }
+    const data ={
+        fix_activities:fix_activities,
+        user_activities:user_activities
+
+    }
+    return resp.json({ status: 1, code: 200, data });
+
+
+});
 
 
 export const addSadhna= asyncHandler(async(req,resp)=>{
 
-    const {activity_id,note,time}=req.body;
-    const today_time=moment("Y-M-D h:i:s");
-    check_today_sadhana=await queryDB(`SELECT *  from daily_report where activity_id=? created_at=? `,[activity_id,today_time]);
-    if(check_today_sadhana){ return resp.json({status:0,code:200,message:['You have already subbmit for this activity!']}) }
-     const insert_data=await insertRecord('daily_report',{activity_id,note});
+    const {activity_id,count,note,time,user_id}=req.body;
+//    const today_time = moment().format("YYYY-MM-DD HH:mm:ss");
+const today_date = moment().format("YYYY-MM-DD");
+
+    console.log("time now",today_date)
+    const check_today_sadhana=await queryDB(`SELECT id  from daily_report where
+         activity_id=? and DATE(created_at)=? `,[activity_id,today_date]);
+    
+    if(check_today_sadhana){ 
+         console.log("created_at",check_today_sadhana.created_at)
+  updateRecord('daily_report',{count,note},['id'],[check_today_sadhana.id]);
+        return resp.json({status:0,code:200,message:['updated activity!']}) }
+     const insert_data=await insertRecord('daily_report',['user_id','activity_id','note','count'],
+        [user_id,activity_id,note,count]);
      if(insert_data){
-        return resp.josn({status:1,code:200,message:['report added successfully!']})
+        return resp.json({status:1,code:200,message:['today report added successfully!']})
      }
 
 
