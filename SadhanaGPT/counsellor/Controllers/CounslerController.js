@@ -63,7 +63,7 @@ export const listcounsler = asyncHandler(async (req, resp) => {
 
     // if (!isValid) return resp.json({ status: 0, code: 422, message: errors });
 
-    const [[counsler_list]] = await db.execute(`SELECT user_id,name, email 
+    const [counsler_list] = await db.execute(`SELECT user_id,name, email 
         FROM users WHERE user_type=? and status=1`,['counsellor']);
 
     if (counsler_list && counsler_list.length=== 0) {
