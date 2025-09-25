@@ -175,13 +175,24 @@ export const listActivities = asyncHandler(async (req, resp) => {
 
     if (!isValid) return resp.json({ status: 0, code: 422, message: errors });
 
-    const [[activities]] = await db.execute(`SELECT name,description,count_type,count_type
+    const [activities] = await db.execute(`SELECT name,description,count_type,count_type
+        
          FROM activities WHERE user_id=?`,[user_id]);
+
+         const [fix_activities] = await db.execute(`SELECT name,description,count_type,count_type
+        
+         FROM fix_activities`);
+
 
     if (activities && activities.length=== 0) {
     return resp.json({ status: 0, code: 404, message: ['No activities found for this user'] });
     }
-    return resp.json({ status: 1, code: 200, data: activities });
+    const data ={
+        fix_activities:fix_activities,
+        user_activities:activities
+
+    }
+    return resp.json({ status: 1, code: 200, data });
 
 
 });

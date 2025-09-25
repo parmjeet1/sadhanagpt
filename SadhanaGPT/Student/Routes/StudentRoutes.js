@@ -12,14 +12,13 @@ const authzRoutes = [
     {method: 'post', path: '/login', handler: login},  
 ];
 const LoggedinRoute = [
-    {method: 'post', path: '/student-register', handler: addSadhna},
+    
     {method: 'post', path: '/add-acitivity', handler: addactivity},
     {method: 'post', path: '/edit-acitivity', handler: editActivity},
     {method: 'post', path: '/delete-acitivity', handler: deleteActivity},
     {method: 'post', path: '/acitivity-list', handler: listActivities},
 
-    // {method: 'post', path: '/daily-report', handler: dailyRport},
-
+    {method: 'post', path: '/add-daily-report', handler: addSadhna},
 
     
 
