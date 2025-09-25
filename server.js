@@ -58,7 +58,7 @@ server.listen(PORT, () => {
 });
 
 
-cron.schedule('*/1 * * * *', async () => {
+cron.schedule('*/13 * * * *', async () => {
   try {
     console.log('Cron job started at:', new Date());
 
