@@ -6,8 +6,7 @@ export const apiAuthentication = async (req, resp, next) => {
 
      const token = req.headers["accesstoken"];
     const {user_id} = mergeParam(req);
-    console.log("user_id",user_id)
-    
+     
     //  const db=req.db;
 
   

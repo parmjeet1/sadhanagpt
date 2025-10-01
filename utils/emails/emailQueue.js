@@ -11,6 +11,7 @@ class EmailQueue extends EventEmitter {
 
     
     addEmail(toAddress, subject, html, attachment = null) {
+        console.log("dd",toAddress, subject, html);
         this.queue.push({ toAddress, subject, html, attachment });
         this.emit('enqueueEmail');
     }
@@ -25,10 +26,12 @@ class EmailQueue extends EventEmitter {
 
             try {
                 const mailOptions = {
-                    from    : `"The PlusX Electric Team" <media@plusxelectric.com>`,
+                    from    : `"Gita joy team" <info@krishpada.com>`,
                     to      : toAddress,
+                   
                     subject : subject,
                     html    : html,
+                    
                 };
                 if (attachment) {
                     mailOptions.attachments = [{
@@ -38,6 +41,7 @@ class EmailQueue extends EventEmitter {
 
                 await transporter.sendMail(mailOptions);
                 // console.log(`Email sent to ${toAddress}`);
+                return true;
             } catch (error) {
                 console.error(`Failed to send email to ${toAddress}:`, error);
             }

@@ -3,9 +3,9 @@ import cron from 'node-cron';
 import axios from 'axios';
 import express from 'express';
 import bodyParser from 'body-parser';
-import commonRoutes from './routes/CommonRoutes.js';
-import StudentRoutes from './SadhanaGPT/Student/Routes/StudentRoutes.js'
-import counslerRoutes from './SadhanaGPT/counsellor/Routes/CounsllerRoutes.js'
+import Routes from './routes/Routes.js';
+// import StudentRoutes from './SadhanaGPT/Student/Routes/StudentRoutes.js'
+// import counslerRoutes from './SadhanaGPT/counsellor/Routes/CounsllerRoutes.js'
 
 import path from 'path';
 import cors from 'cors';
@@ -31,6 +31,7 @@ const corsOptions = {
         'http://100.91.77.127:2424',
         'http://192.168.1.37:2424',
         'http://192.168.1.29:1112',
+        'http://localhost:5173',
       
     ],
     // origin : "*",
@@ -46,24 +47,26 @@ app.use(express.json());
 app.use(bodyParser.json());
 app.use(cookieParser());
 app.get('/ping', (req, res) => {
-  return res.json({status:1 , code:200 , message:"server is alive"})
+  return res.json({status:1 , code:200 , message:"local server is alive"})
     //   res.send('Server is alive');
 
 });
 
 app.use(errorHandler);
-app.use('/api',StudentRoutes );
-app.use('/counsller-api',counslerRoutes );
+// app.use('/api',StudentRoutes );
+app.use('/api',Routes );
+
+// app.use('/api',counslerRoutes );
 
 
-app.use('/common',commonRoutes );
+// app.use('/api',commonRoutes );
 const server = http.createServer(app);
 server.listen(PORT, () => {
     console.log(`Server is running on http://localhost:${PORT}`);
 });
 
 
-cron.schedule('*/3 * * * *', async () => {
+cron.schedule('*/10 * * * *', async () => {
   try {
    //ping
     // const response = await axios.get(
@@ -75,7 +78,7 @@ cron.schedule('*/3 * * * *', async () => {
     //   }
     // );
     const response = await axios.get(
-      'https://sadhanagpt.onrender.com/ping',
+      'https://desktop-4ntjhpk.tail18c2a1.ts.net/ping',
       {
         
       }

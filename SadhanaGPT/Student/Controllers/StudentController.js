@@ -4,11 +4,12 @@ import bcrypt from "bcrypt"
 
 import crypto from "crypto"
 
-import { asyncHandler, checkNumber, mergeParam } from "../../../utils/utils.js";
+import { asyncHandler, checkNumber, generateOTP, mergeParam } from "../../../utils/utils.js";
 import validateFields from "../../../utils/validation.js";
 import { deleteRecord, insertRecord, queryDB, updateRecord } from "../../../utils/dbUtils.js";
 import moment from "moment";
 import db from '../../../config/database.js'
+import emailQueue from "../../../utils/emails/emailQueue.js";
 
 export const studentRegister = asyncHandler(async (req, resp) => {
 const {name,age,country_code="+91",user_type,mobile,email,password,counsller_id,added_from='andorid',device_name="web"}=mergeParam(req)
@@ -97,6 +98,83 @@ export const login = asyncHandler(async (req, resp) => {
     }
 });
 
+export const logout = asyncHandler(async (req, resp) => {
+    const {user_id} = mergeParam(req);
+    if (!user_id) return resp.json({ status: 0, code: 422, message: ["Rider Id is required"] });
+    
+    const rider = queryDB(`SELECT EXISTS (SELECT 1 FROM users WHERE user_id = ?) AS rider_exists`, [user_id]);
+    if(!rider) return resp.json({status:0, code:400, message: 'user ID Invalid!'});
+
+    const update = await updateRecord('users', {status:0, access_token: ""},['user_id'], [user_id]);
+    
+    if(update.affectedRows > 0){
+        return resp.json({status: 1, code: 200, message: 'Logged out sucessfully'});
+    }else{
+        return resp.json({status: 0, code: 405, message: 'Oops! There is something went wrong! Please Try Again'});
+    }
+
+});
+export const forgetPassword = asyncHandler(async (req, resp) => {
+    const {user_id} = mergeParam(req);
+    if (!user_id) return resp.json({ status: 0, code: 422, message: ["user Id is required"] });
+ const [[user_data]] = await db.execute(
+        `SELECT user_id, name, email FROM users WHERE user_id = ? LIMIT 1`,
+        [user_id]
+    );
+
+    if(!user_data) return resp.json({ status: 0, code: 422, message: ["The Email number is not registered with us. Kindly sign up."] });
+    
+     const otp_value=generateOTP(4);
+    const htmlUser = `<html>
+           <body style="font-family: Arial, sans-serif; color: #333; line-height: 1.6;">
+  <h3 style="color:#2c3e50;">Hello ${user_data.name},</h3>
+
+  <p>We received a request to verify your account. Please use the following One-Time Password (OTP) to complete the process:</p>
+
+  <p style="font-size: 20px; font-weight: bold; color: #e74c3c; letter-spacing: 3px;">
+    ${otp_value}
+  </p>
+
+  <p>This OTP is valid for <strong>10 minutes</strong>. Please do not share it with anyone for security reasons.</p>
+
+  <p>If you did not request this verification, please ignore this email.</p>
+
+  <br/>
+  <p>Best regards, <br/> <strong>Gita Joy</strong></p>
+</body>
+        </html>`;
+  const mail_sent=   emailQueue.addEmail(user_data.email, 'OTP', htmlUser);
+  console.log("mail_sent",mail_sent)
+  
+    updateRecord('users',{otp:otp_value},['user_id'],[user_id]);
+  
+  return resp.json({status: 1, code:200, message: "OTP has been sent to your Email. "});
+
+
+});
+
+export const verifyOTP = asyncHandler(async (req, resp) => {
+    const {user_id,otp} = mergeParam(req);
+    if (!user_id) return resp.json({ status: 0, code: 422, message: ["user Id is required"] });
+ const [[user_data]] = await db.execute(
+        `SELECT otp FROM users WHERE user_id = ? LIMIT 1`,
+        [user_id]
+    );
+
+    if(!user_data) return resp.json({ status: 0, code: 422, message: ["The Email number is not registered with us. Kindly sign up."] });
+    console.log("user_data",user_data.otp,'user otp ',otp)
+    
+    if(user_data.otp!=otp || user_data.otp==0){
+  return resp.json({status: 0, code:201, message: ['Invailed OTP']});
+    }
+      updateRecord('users',{otp:''},['user_id'],[user_id]);
+  
+  return resp.json({status: 1, code:200, message: "verfied"});
+  
+
+
+});
+
 export const addactivity= asyncHandler(async(req,resp)=>{
 
     const {user_id,name,description,count_type,activity_type}=req.body;
@@ -179,7 +257,7 @@ export const listActivities = asyncHandler(async (req, resp) => {
         
          FROM activities WHERE user_id=?`,[user_id]);
 
-         const [fix_activities] = await db.execute(`SELECT name,description,count_type,count_type
+         const [fix_activities] = await db.execute(`SELECT name,description,count_type,count_type,activity_type
         
          FROM fix_activities`);
 
@@ -196,12 +274,14 @@ export const listActivities = asyncHandler(async (req, resp) => {
 
 
 });
-export const todayReport = asyncHandler(async (req, resp) => {
+export const todayReportlist = asyncHandler(async (req, resp) => {
     const { user_id } = req.body;
 
     const { isValid, errors } = validateFields(mergeParam(req), {
         user_id: ["required"],
     });
+const today_date = moment().format("YYYY-MM-DD");
+console.log("today_date",today_date)
 
     if (!isValid) return resp.json({ status: 0, code: 422, message: errors });
 
@@ -209,15 +289,15 @@ export const todayReport = asyncHandler(async (req, resp) => {
       a.name, a.count_type, a.activity_type, r.note,r.activity_id,r.count
        from daily_report r
        JOIN activities a on r.activity_id=a.id
-       where  r.user_id=?
-        `,[user_id]);
+       where  r.user_id=? and DATE(r.created_at)=?
+        `,[user_id,today_date]);
 
         const [fix_activities] = await db.execute(`SELECT 
       fa.name, fa.count_type, fa.activity_type, dr.note,dr.activity_id,dr.count
        from daily_report dr 
-       LEFT JOIN fix_activities fa ON  fa.acitivity_id=dr.activity_id
-       where  dr.user_id=?
-        `,[user_id]);
+        JOIN fix_activities fa ON  fa.acitivity_id=dr.activity_id
+       where  dr.user_id=? and DATE(dr.created_at)=?
+        `,[user_id,today_date]);
 
        
 
@@ -231,6 +311,88 @@ export const todayReport = asyncHandler(async (req, resp) => {
 
     }
     return resp.json({ status: 1, code: 200, data });
+
+
+});
+export const detailReport = asyncHandler(async (req, resp) => {
+    const { user_id, activity_id } = req.body;
+
+    const { isValid, errors } = validateFields(mergeParam(req), {
+        user_id: ["required"],
+    });
+
+    if (activity_id.startsWith('f')) {
+     const [activity_details] = await db.execute(`SELECT 
+      a.name, a.count_type, a.activity_type, DATE_FORMAT(a.created_at, '%Y-%m-%d') as created_at
+       from fix_activities a 
+       where  a.activity_id=? limit 1
+        `,[activity_id]);
+
+         const [report] = await db.execute(`SELECT note,count,DATE_FORMAT(created_at, '%W') AS day,DATE_FORMAT(created_at, '%Y-%m-%d') as created_at
+      from daily_report
+
+       where  user_id=? and activity_id=?
+        `,[user_id,activity_id]);
+       const  data={detail:activity_details,
+        report
+       }
+    return resp.json({ status: 1, code: 200,message:['fixactivity data'], data});
+
+
+} else {
+
+     const [activity_details] = await db.execute(`SELECT 
+      a.name, a.count_type, a.activity_type, DATE_FORMAT(a.created_at, '%Y-%m-%d') as created_at
+       from activities a 
+       where  a.id=? limit 1
+        `,[activity_id]);
+
+         const [report] = await db.execute(`SELECT note,count,DATE_FORMAT(created_at, '%W') AS day,DATE_FORMAT(created_at, '%Y-%m-%d') as created_at
+      from daily_report
+
+       where  user_id=? and activity_id=?
+        `,[user_id,activity_id]);
+       const  data={detail:activity_details,
+        report
+       }
+
+
+    return resp.json({ status: 1, code: 200,message:['activity data'], data });
+
+
+}
+
+// console.log("today_date",today_date)
+
+
+
+    if (!isValid) return resp.json({ status: 0, code: 422, message: errors });
+/*
+    const [user_activities] = await db.execute(`SELECT 
+      a.name, a.count_type, a.activity_type, r.note,r.activity_id,r.count
+       from daily_report r
+       JOIN activities a on r.activity_id=a.id
+       where  r.user_id=? and DATE(r.created_at)=?
+        `,[user_id,today_date]);
+
+        const [fix_activities] = await db.execute(`SELECT 
+      fa.name, fa.count_type, fa.activity_type, dr.note,dr.activity_id,dr.count
+       from daily_report dr 
+        JOIN fix_activities fa ON  fa.acitivity_id=dr.activity_id
+       where  dr.user_id=? and DATE(dr.created_at)=?
+        `,[user_id,today_date]);
+
+       
+
+
+    // if (!fix_activities && fix_activities.length=== 0 || user_activities) {
+    // return resp.json({ status: 0, code: 404, message: ['No activities found for this user'] });
+    // }
+    const data ={
+        fix_activities:fix_activities,
+        user_activities:user_activities
+
+    }*/
 
 
 });
