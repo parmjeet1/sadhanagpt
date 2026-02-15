@@ -6,7 +6,7 @@ import crypto from "crypto"
 
 import { asyncHandler, checkNumber, generateOTP, mergeParam } from "../../../utils/utils.js";
 import validateFields from "../../../utils/validation.js";
-import { deleteRecord, insertRecord, queryDB, updateRecord } from "../../../utils/dbUtils.js";
+import { deleteRecord, getPaginatedData, insertRecord, queryDB, updateRecord } from "../../../utils/dbUtils.js";
 import moment from "moment";
 import db from '../../../config/database.js'
 import emailQueue from "../../../utils/emails/emailQueue.js";
@@ -525,3 +525,304 @@ export const activity_list= asyncHandler(async(req,resp)=>{
      
 
 })
+
+
+
+export const addTemple= asyncHandler(async(req,resp)=>{
+
+    try{ 
+     const request =req.body;
+       const {user_id, temple_name}=request;
+       const { isValid, errors } = validateFields(request, {
+        user_id: ["required"],
+        temple_name: ["required"]
+    });
+    if (!isValid) return resp.json({ status: 0, code: 422, message: errors });
+
+    
+
+     const insert_data=await insertRecord('temples',['name'],
+        [temple_name]);
+        if(insert_data){
+            return resp.json({status:1,code:200,message:['temple added successfully!']})
+        } 
+    }catch(err){
+        console.log("err",err)
+        return resp.status(500).json({
+            status: 0,
+            code: 500,
+            message: ['Internal server error']
+        });
+    }
+
+    
+
+})
+export const templeList = asyncHandler(async (req, resp) => {
+    try {
+        /*
+        ifnull((select base_price from cycle_pricing cp where cp.station_id=cycle_list.station_id  and cp.type_of_cycle=cycle_list.cycle_type
+             and cp.type_of_cycle=cycle_list.cycle_type ),0)as base_price
+        */
+        const { page_no=1,  search_text='',rowSelected} = mergeParam(req);
+       
+       
+        const { isValid, errors } = validateFields(mergeParam(req), { page_no: ["required"] });
+        if (!isValid) return resp.json({ status: 0, code: 422, message: errors });
+
+     const params = {
+            tableName: 'temples ',
+           columns: `temple_id, name`,
+        
+        sortColumn:'id',
+        sortOrder: 'DESC',
+        page_no,
+        limit: rowSelected || 10,
+        liveSearchFields: ['name', ],
+        liveSearchTexts: [search_text],
+        whereField: ['status'],
+        whereValue: [1],
+        whereOperator: ['=']
+        };
+       
+        const result = await getPaginatedData(params);
+        
+           
+
+        return resp.json({
+            status: 1,
+            code: 200,
+            message: ["temple list fetched successfully!"],
+            data: result,
+            total_page: result.totalPage,
+            total: result.total,
+           
+        });//
+
+    } catch (error) {
+        console.error('Error fetching cycle List:', error);
+        return resp.status(500).json({
+            status: 0,
+            code: 500,
+            message: 'Error fetching cycle List'
+        });
+    }
+});
+
+export const listCounsellor = asyncHandler(async (req, resp) => {
+
+    const request = mergeParam(req);
+
+    const { temple_id } = request;
+
+    const { isValid, errors } = validateFields(request, {
+        temple_id: ["required"]
+    });
+
+    if (!isValid)
+        return resp.json({
+            status: 0,
+            code: 422,
+            message: errors
+        });
+
+
+    const [counsellor_list] = await db.execute(
+        `SELECT user_id, name
+         FROM users
+         WHERE temple_id = ?
+         AND user_type = ?
+         AND status = 1`,
+        [temple_id, 'counsellor']
+    );
+
+
+    if (!counsellor_list || counsellor_list.length === 0) {
+
+        return resp.json({
+            status: 0,
+            code: 404,
+            message: ['No counsellor found for this temple']
+        });
+
+    }
+
+
+    return resp.json({
+        status: 1,
+        code: 200,
+        data: counsellor_list,
+        message: ['Counsellor list fetched successfully']
+    });
+
+});
+export const updateStudentDetails = asyncHandler(async (req, resp) => {
+
+    const data = mergeParam(req);
+
+    const {
+        user_id,
+        name,
+        mobile,
+        temple_id,
+        counsller_id
+    } = data;
+
+
+    // ✅ Validation
+    const { isValid, errors } = validateFields(data, {
+
+        user_id: ["required"],
+        name: ["required"],
+        mobile: ["required"],
+        temple_id: ["required"],
+        counsller_id: ["required"]
+
+    });
+
+    if (!isValid) {
+
+        return resp.json({
+            status: 0,
+            code: 422,
+            message: errors
+        });
+
+    }
+
+
+    // ✅ Check user exist
+    const [[user]] = await db.execute(`
+        SELECT id FROM users WHERE user_id = ?
+    `, [user_id]);
+
+
+    if (!user) {
+
+        return resp.json({
+            status: 0,
+            code: 404,
+            message: ["User not found"]
+        });
+
+    }
+
+
+    // ✅ Update details
+    await db.execute(`
+        UPDATE users
+        SET
+        user_type = 'student',
+        name = ?,
+        mobile = ?,
+        temple_id = ?,
+        counsller_id = ?
+        WHERE user_id = ?
+    `, [
+        name,
+        mobile,
+        temple_id,
+        counsller_id,
+        user_id
+    ]);
+
+
+    return resp.json({
+
+        status: 1,
+        code: 200,
+        message: ["Profile updated successfully"],
+
+        data:
+             {
+                user_id,
+                name,
+                mobile,
+                temple_id,
+                counsller_id,
+                user_type:'student'
+            
+        }
+
+    });
+
+});
+
+
+export const registerStudentEmailOnly = asyncHandler(async (req, resp) => {
+
+    const data = mergeParam(req);
+
+    const { email } = data;
+
+
+    const { isValid, errors } = validateFields(data, {
+        email: ["required"]
+    });
+
+    if (!isValid) {
+
+        return resp.json({
+            status: 0,
+            code: 422,
+            message: errors
+        });
+
+    }
+
+
+    // ✅ Check email already exists
+    const [[isExist]] = await db.execute(`
+        SELECT user_id, email FROM users WHERE email = ?
+    `, [email]);
+
+
+    if (isExist) {
+
+        return resp.json({
+
+            status: 1,
+            code: 200,
+            message: ["User already exists"],
+
+           
+
+        });
+
+    }
+
+
+    // ✅ Insert new user (trigger will create user_id)
+    await db.execute(`
+        INSERT INTO users
+        (
+            email,
+            status
+        )
+        VALUES (?, ?)
+    `, [
+        email,
+        1
+    ]);
+
+
+    // ✅ Fetch again to get trigger generated user_id
+    const [[newUser]] = await db.execute(`
+        SELECT user_id, email FROM users WHERE email = ?
+    `, [email]);
+
+
+    return resp.json({
+
+        status: 1,
+        code: 200,
+        message: ["Student registered successfully"],
+
+        data: {
+            user_id: newUser.user_id,
+            email: newUser.email
+        }
+
+    });
+
+});

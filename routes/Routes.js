@@ -3,14 +3,14 @@ import { Router } from "express";
 
 import { Register } from "../SadhanaGPT/Controllers/CommonControllers.js";
 import { Authorization } from "../middleware/AuthorizationMiddleware.js";
-import { addactivity, addSadhna, deleteActivity, detailReport, editActivity, forgetPassword, listActivities, login, logout, studentRegister, todayReportlist, verifyOTP ,Registertest} from "../SadhanaGPT/Student/Controllers/StudentController.js";
+import { addactivity, addSadhna, deleteActivity, detailReport, editActivity, forgetPassword, listActivities, login, logout, studentRegister, todayReportlist, verifyOTP ,Registertest, addTemple, templeList, listCounsellor, updateStudentDetails, registerStudentEmailOnly} from "../SadhanaGPT/Student/Controllers/StudentController.js";
 import { apiAuthentication } from "../middleware/apiAuthenticationMiddleware.js";
-import { activitydetail, chartdetail, counslerRegister, listcounsler, studentList} from "../SadhanaGPT/counsellor/Controllers/CounslerController.js";
+
 const router = Router();
 
 
 const authzAndAuthRoutes = [
- {method: 'post', path: '/student-register', handler: studentRegister},
+ {method: 'post', path: '/student-register', handler: registerStudentEmailOnly},
  //
  {method: 'post', path: '/register-test', handler: Registertest},
 
@@ -19,15 +19,7 @@ const authzAndAuthRoutes = [
     
  {method: 'post', path: '/login', handler: login},
     {method: 'post', path: '/logout', handler: logout},  
- 
-
-      
-
-
-      {method: 'post', path: '/counsller-register', handler: counslerRegister},
-         
-          {method: 'get', path: '/counsller-list', handler: listcounsler},
-          
+            
 ];
     authzAndAuthRoutes.forEach(({ method, path, handler }) => {
     const middlewares = [];
@@ -38,7 +30,16 @@ const authzAndAuthRoutes = [
     });
 
     const LoggedinRoute = [
-        //student routes
+        
+        
+
+        {method: 'get', path: '/temple-list', handler: templeList},
+        {method: 'post', path: '/add-temple', handler: addTemple},
+        {method: 'get', path: '/counsellor-list', handler: listCounsellor},
+        {method: 'post', path: '/update-student-profile', handler: updateStudentDetails},
+
+        
+
         
         {method: 'post', path: '/add-acitivity', handler: addactivity},
         {method: 'post', path: '/edit-acitivity', handler: editActivity},
@@ -49,25 +50,18 @@ const authzAndAuthRoutes = [
     
         {method: 'get', path: '/today-report', handler: todayReportlist},
         {method: 'get', path: '/detail-report', handler: detailReport},
-             {method: 'post', path: '/forget-password', handler: forgetPassword}, 
-     {method: 'post', path: '/verify-otp', handler: verifyOTP},
+        {method: 'post', path: '/forget-password', handler: forgetPassword}, 
+        {method: 'post', path: '/verify-otp', handler: verifyOTP},
+        
 
-        // counsler routes
-        {method: 'get', path: '/student-list', handler: studentList},
-        {method: 'get', path: '/chart-details', handler: chartdetail},
-        {method: 'get', path: '/user-activity-details', handler: activitydetail},
+        // // counsler routes
+        // {method: 'get', path: '/student-list', handler: studentList},
+        // {method: 'get', path: '/chart-details', handler: chartdetail},
+        // {method: 'get', path: '/user-activity-details', handler: activitydetail},
 
         
 
-        //student detail page.
-        
-
-    
-        
-    
-        
-    
-          
+        //student detail page.      
     ];
     LoggedinRoute.forEach(({ method, path, handler }) => {
         const middlewares = [Authorization];  // rateLimit

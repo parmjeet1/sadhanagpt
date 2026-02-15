@@ -5,7 +5,6 @@ import express from 'express';
 import bodyParser from 'body-parser';
 import Routes from './routes/Routes.js';
 // import StudentRoutes from './SadhanaGPT/Student/Routes/StudentRoutes.js'
-// import counslerRoutes from './SadhanaGPT/counsellor/Routes/CounsllerRoutes.js'
 
 import path from 'path';
 import cors from 'cors';
@@ -79,7 +78,6 @@ app.use(errorHandler);
 // app.use('/api',StudentRoutes );
 app.use('/api',Routes );
 
-// app.use('/api',counslerRoutes );
 
 
 // app.use('/api',commonRoutes );
