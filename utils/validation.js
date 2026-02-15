@@ -9,6 +9,9 @@ const validateFields = (data, rules) => {
         validations.forEach(rule => {
             switch (rule) {
                 case 'required':
+            //          if (value === undefined ||) {
+            // errors.push(`${field} is required.`);
+            //                 }
                     if (!value) {
                         // errors[field] = `${field} is required.`;
                         errors.push(`${field} is required.`);

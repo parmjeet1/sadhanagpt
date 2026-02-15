@@ -26,8 +26,8 @@ const {name,age,country_code="+91",user_type,mobile,email,password,counsller_id,
     if (!isValid) return resp.json({ status: 0, code: 422, message: errors });
 
 
-    const res = checkNumber("+91", mobile);
-    if(res.status == 0) return resp.json({ status:0, code:422, message: [res.msg] });
+    // const res = checkNumber("+91", mobile);
+    // if(res.status == 0) return resp.json({ status:0, code:422, message: [res.msg] });    
 console.log("db.execute type:", typeof db.execute);
 
     const [[isExist]] = await db.execute(`
@@ -56,7 +56,84 @@ const hashedPassword = await bcrypt.hash(password, 10);
         mobile : mobile
     };
     return resp.json({ status:1, code:200, message: ["User registered successfully"], data:{user:result}});
+
 });
+export const Registertest = asyncHandler(async (req, resp) => {
+ const {name,email,profile,added_from,fcm_token,device_name}=req.body;
+ console.log("name,email,profile,added_from,fcm_token",name,email,profile,added_from,fcm_token)
+      const result =await googleLogin(
+          name,
+          email,
+          profile,
+          added_from,
+          fcm_token,
+          device_name
+        );
+        return resp.json(result);
+});
+const googleLogin = async (name,email,profile,added_from,fcm_token,device_name) => {
+;
+const data={name,email,profile,added_from,fcm_token,device_name}
+    const { isValid, errors } = validateFields(data, {
+        email: ["required","email"], profile: ["required"],fcm_token: ["required"]
+    });
+
+    if (!isValid) return  { status: 0, code: 422, message: errors };
+console.log("email",email)
+    const [[user_data]] = await db.execute(
+        `SELECT user_id, name, email FROM users WHERE email = ? LIMIT 1`,
+        [email]
+    );
+    let result;
+const access_token = crypto.randomBytes(12).toString('hex');
+    if(!user_data)
+    {
+//added_from,added_from
+        const [[isExist]] = await db.execute(`
+        SELECT COUNT(*) AS check_email FROM users AS u WHERE u.email = ?
+    `, [ email ]);
+  
+     if(isExist.check_email > 0 ) return resp.json({ status:0, code:422, message: ['Email already registered.'] }); 
+    
+    const student = await insertRecord('users', [
+         'name',  'email','access_token','fcm_token','profile' ,'added_from','device_name'
+    ],[  name, email, access_token,fcm_token, profile, added_from ,device_name]);
+    console.log("student.insertId",student.insertId)
+    if(!student) return resp.json({status:0, code:405, message: ["Failed to register. Please Try Again"], error: true}); 
+    
+    const updated_data=await queryDB(`SELECT user_id FROM users WHERE id = ? LIMIT 1`, [student.insertId]);
+        result = {
+        student_id     : updated_data.user_id,
+        name   : name,
+        email  : email,
+        access_token : access_token,
+        profile:profile,
+
+    };
+    return { status:1, code:200, message: ["successfully Logged in!"], data:result};
+
+    }
+        
+
+    const [update] = await db.execute(`UPDATE users SET access_token = ? WHERE email = ?`, [access_token, email]);
+    if(update.affectedRows > 0){
+        result = {
+        student_id     :user_data.user_id,
+        name   : name,
+        email  : email,
+        access_token : access_token,
+        profile:profile,
+
+            }
+        
+        return {status:1, is_logged_id:1,  code:200, message: ["successfully Logged in !"], data:result};
+    }else{
+        return {status:0, code:405, message: ["Oops! There is something went wrong! Please Try Again"], error: true};
+    }
+    
+      
+    
+};
 export const login = asyncHandler(async (req, resp) => {
     const { email,password ,fcm_token} = mergeParam(req);
 
@@ -265,9 +342,13 @@ export const listActivities = asyncHandler(async (req, resp) => {
     if (activities && activities.length=== 0) {
     return resp.json({ status: 0, code: 404, message: ['No activities found for this user'] });
     }
+    const all_activities = [
+  ...activities.map(a => ({ ...a, type: 'user_activity' })),
+  ...fix_activities.map(fa => ({ ...fa, type: 'fix_activity' }))
+];
+
     const data ={
-        fix_activities:fix_activities,
-        user_activities:activities
+       all_activities
 
     }
     return resp.json({ status: 1, code: 200, data });

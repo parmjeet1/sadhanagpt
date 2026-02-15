@@ -3,16 +3,21 @@ import { Router } from "express";
 
 import { Register } from "../SadhanaGPT/Controllers/CommonControllers.js";
 import { Authorization } from "../middleware/AuthorizationMiddleware.js";
-import { addactivity, addSadhna, deleteActivity, detailReport, editActivity, forgetPassword, listActivities, login, logout, studentRegister, todayReportlist, verifyOTP } from "../SadhanaGPT/Student/Controllers/StudentController.js";
+import { addactivity, addSadhna, deleteActivity, detailReport, editActivity, forgetPassword, listActivities, login, logout, studentRegister, todayReportlist, verifyOTP ,Registertest} from "../SadhanaGPT/Student/Controllers/StudentController.js";
 import { apiAuthentication } from "../middleware/apiAuthenticationMiddleware.js";
-import { activitydetail, chartdetail, counslerRegister, listcounsler, studentList } from "../SadhanaGPT/counsellor/Controllers/CounslerController.js";
+import { activitydetail, chartdetail, counslerRegister, listcounsler, studentList} from "../SadhanaGPT/counsellor/Controllers/CounslerController.js";
 const router = Router();
 
 
 const authzAndAuthRoutes = [
  {method: 'post', path: '/student-register', handler: studentRegister},
+ //
+ {method: 'post', path: '/register-test', handler: Registertest},
+
     
-    {method: 'post', path: '/login', handler: login},
+    // {method: 'get', path: '/google-call-back', handler: googleLogin},
+    
+ {method: 'post', path: '/login', handler: login},
     {method: 'post', path: '/logout', handler: logout},  
  
 

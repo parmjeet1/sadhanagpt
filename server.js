@@ -14,8 +14,13 @@ import { fileURLToPath } from 'url';
 import { errorHandler } from './middleware/errorHandler.js';
 import dotenv from 'dotenv';
 import http from 'http';
+import passport from 'passport';
+import session from "express-session";
+import authRoutes from "./routes/auth.js";
+import "./config/passport.js";
 
 dotenv.config();
+// https://desktop-4ntjhpk.tail18c2a1.ts.net/auth/google
 
 const app  = express();
 app.set('trust proxy', true);
@@ -47,7 +52,25 @@ app.use(express.json());
 app.use(bodyParser.json());
 app.use(cookieParser());
 app.get('/ping', (req, res) => {
+  console.log("pong");
   return res.json({status:1 , code:200 , message:"local server is alive"})
+    //   res.send('Server is alive');
+
+});
+app.use("/auth", authRoutes);
+
+app.use(
+  session({
+    secret: process.env.SESSION_SECRET,
+    resave: false,
+    saveUninitialized: true,
+  })
+);
+
+app.use(passport.initialize());
+app.use(passport.session());
+app.get('/google-call-back', (req, res) => {
+  return res.json({status:1 , code:200 , message:"google-call-back"})
     //   res.send('Server is alive');
 
 });
@@ -66,28 +89,28 @@ server.listen(PORT, () => {
 });
 
 
-cron.schedule('*/10 * * * *', async () => {
-  try {
-   //ping
-    // const response = await axios.get(
-    //   'https://sadhanagpt.onrender.com/counsller-api/counsller-list',
-    //   {
-    //     headers: {
-    //       Authorization: process.env.API_AUTH_KEY, // replace with your token
-    //     },
-    //   }
-    // );
-    const response = await axios.get(
-      'https://desktop-4ntjhpk.tail18c2a1.ts.net/ping',
-      {
+// cron.schedule('*/10 * * * *', async () => {
+//   try {
+//    //ping
+//     // const response = await axios.get(
+//     //   'https://sadhanagpt.onrender.com/counsller-api/counsller-list',
+//     //   {
+//     //     headers: {
+//     //       Authorization: process.env.API_AUTH_KEY, // replace with your token
+//     //     },
+//     //   }
+//     // );
+//     const response = await axios.get(
+//       'https://desktop-4ntjhpk.tail18c2a1.ts.net/ping',
+//       {
         
-      }
-    );
+//       }
+//     );
 
-    console.log('API Response:', response.data);
-    console.log('Cron job finished at:', new Date());
-  } catch (error) {
-    console.error('Error in cron job:', error.message);
-  }
-});
+//     console.log('API Response:', response.data);
+//     console.log('Cron job finished at:', new Date());
+//   } catch (error) {
+//     console.error('Error in cron job:', error.message);
+//   }
+// });
 
