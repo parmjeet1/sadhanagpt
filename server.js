@@ -137,7 +137,7 @@ process.on("warning", (warning) => {
     //  cron.schedule('*/1  * * * *', async () => {
 
           console.log("⏰ Saturday 10 AM: Dispatching Sadhana Reminders...");
-          // await sendSadhanaWhatsappReminders();
+        
           await sendSadhanaPushReminders();
       });
        

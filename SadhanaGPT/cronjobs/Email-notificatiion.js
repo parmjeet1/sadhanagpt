@@ -220,7 +220,7 @@ export const olddispatchWeeklyCounsellorReports = async () => {
         console.error("Critical error in dispatchWeeklyCounsellorReports:", error);
     }
 };
-export const olddispatchWeeklyCounsellorReports = async () => {
+export const old2dispatchWeeklyCounsellorReports = async () => {
     try {
         console.log("Starting generation of dynamic CSV reports...");
         
