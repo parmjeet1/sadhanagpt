@@ -188,34 +188,31 @@ export const downloadErrorLog = asyncHandler(async (req, res) => {
 export const saveSubscription = async (req, res) => {
     try {
         const { user_id, subscription } = req.body;
-        console.log("Received subscription:", req.body);
-        if (!user_id || !subscription) {
-            return res.status(400).json({ status: 0, message: "Missing required data" });
-        }
-        const endpoint = subscription.endpoint;
-        const p256dh = subscription.keys.p256dh;
-        const auth = subscription.keys.auth;
-        // Check if this specific subscription already exists to avoid duplicates
-        const [existing] = await db.execute(
-            `SELECT id FROM push_subscriptions WHERE endpoint = ?`, 
-            [endpoint]
-        );
+        const { endpoint, keys } = subscription;
+        
+        // 1. Check if this exact browser endpoint is already in the database
+        const [existing] = await db.execute(`SELECT id FROM push_subscriptions WHERE endpoint = ?`, [endpoint]);
+        
         if (existing.length > 0) {
-            // If the endpoint exists but the user_id changed (e.g. someone else logged into this browser), update it
-            await db.execute(
-                `UPDATE push_subscriptions SET user_id = ?, p256dh = ?, auth = ? WHERE endpoint = ?`,
-                [user_id, p256dh, auth, endpoint]
-            );
-        } else {
-            // Insert new subscription
-            await db.execute(
-                `INSERT INTO push_subscriptions (user_id, endpoint, p256dh, auth) VALUES (?, ?, ?, ?)`,
-                [user_id, endpoint, p256dh, auth]
-            );
+            // The browser is already subscribed! Do nothing and return success.
+            return res.status(200).json({ status: 1, message: "Push notifications  enabled!" });
         }
-        res.status(200).json({ status: 1, message: "Subscription saved successfully" });
+
+        // 2. If it is NOT in the database, insert it
+        // (The ON DUPLICATE KEY UPDATE protects you from any rare 'auth' clashes)
+        await db.execute(`
+            INSERT INTO push_subscriptions (user_id, endpoint, p256dh, auth) 
+            VALUES (?, ?, ?, ?)
+            ON DUPLICATE KEY UPDATE 
+                user_id = VALUES(user_id),
+                endpoint = VALUES(endpoint),
+                p256dh = VALUES(p256dh),
+                created_at = CURRENT_TIMESTAMP
+        `, [user_id, endpoint, keys.p256dh, keys.auth]);
+
+        return res.status(200).json({ status: 1, message: "Push notifications enabled!" });
     } catch (error) {
-        console.error("Error saving subscription:", error);
-        res.status(500).json({ status: 0, message: "Server error" });
+        console.error("Subscription Error:", error);
+        return res.status(500).json({ status: 0, message: "Failed to save subscription" });
     }
 };
