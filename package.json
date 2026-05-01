@@ -25,6 +25,7 @@
     "passport": "^0.7.0",
     "passport-google-oauth20": "^2.0.0",
     "qrcode-terminal": "^0.12.0",
+    "web-push": "^3.6.7",
     "whatsapp-web.js": "^1.34.6",
     "winston": "^3.17.0"
   },

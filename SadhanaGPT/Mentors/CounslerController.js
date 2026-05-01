@@ -89,11 +89,12 @@ export const LableList = asyncHandler(async (req, resp) => {
   try {
 
     // ✅ Fetch labels mapped to this center & user, but now count students from `user_assignments`
-      const [labels] = await db.execute(
+    //CONCAT(ll.name, ' ', COUNT(ua.user_id)) AS label_name 
+    const [labels] = await db.execute(
       `
       SELECT 
         ll.id AS label_id,
-        CONCAT(ll.name, ' ', COUNT(ua.user_id)) AS label_name
+       ll.name AS label_name
       FROM labels_list ll 
       
       LEFT JOIN user_assignments ua 

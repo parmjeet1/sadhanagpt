@@ -20,6 +20,7 @@
       import { processRewardRules } from './SadhanaGPT/Controllers/CronJobController.js';
       import { processInactivityReminders,dispatchWeeklyCounsellorReports } from './SadhanaGPT/cronjobs/Email-notificatiion.js';
       import { sendSadhanaWhatsappReminders } from './SadhanaGPT/cronjobs/WhatsAppMessage.js';
+import { sendSadhanaPushReminders } from './SadhanaGPT/cronjobs/WebPushNotification.js';
      process.on("unhandledRejection", (reason) => {
   logger.error(`Unhandled Rejection: ${reason}`);
 });
@@ -122,10 +123,11 @@ process.on("warning", (warning) => {
       // // processInactivityReminders();
       //   // processRewardRules();
       // });
-
+      //  7th day of every month at 12:00 PM
       cron.schedule('0 0 * * 7', async () => {
 
-        dispatchWeeklyCounsellorReports();
+        await dispatchWeeklyCounsellorReports();
+
 
 
       });
@@ -135,7 +137,8 @@ process.on("warning", (warning) => {
     //  cron.schedule('*/1  * * * *', async () => {
 
           console.log("⏰ Saturday 10 AM: Dispatching Sadhana Reminders...");
-          await sendSadhanaWhatsappReminders();
+          // await sendSadhanaWhatsappReminders();
+          await sendSadhanaPushReminders();
       });
-
+       
 app.use(errorHandler)

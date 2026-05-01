@@ -1,7 +1,7 @@
 
 import { Router } from "express";
 
-import { downloadErrorLog, Register, sendEmailOtp, verifyEmailOtp } from "../SadhanaGPT/Controllers/CommonControllers.js";
+import { downloadErrorLog, Register, saveSubscription, sendEmailOtp, verifyEmailOtp } from "../SadhanaGPT/Controllers/CommonControllers.js";
 import { Authorization } from "../middleware/AuthorizationMiddleware.js";
 import { addactivity, addSadhna, deleteActivity, detailReport, editActivity, forgetPassword, listActivities, login, logout, studentRegister, todayReportlist, verifyOTP ,Registertest, addTemple, templeList, listCounsellor, updateStudentDetails, onBoarding, userProfile, UsernotificationList, StudentActivitiesAnalytics, editProfile, addCounsellor, contentListStudent, verifyCounsellor, submitAppFeedback} from "../SadhanaGPT/Student/Controllers/StudentController.js";
 import { apiAuthentication, checkCounsellor } from "../middleware/apiAuthenticationMiddleware.js";
@@ -39,7 +39,10 @@ const authzAndAuthRoutes = [
     });
 
     const LoggedinRoute = [
-        //
+        // 
+        
+        {method: 'post',        path: '/notifications-subscribe',                handler: saveSubscription ,role: "student"},
+
         
         {method: 'post',        path: '/app-feedback',                handler: submitAppFeedback ,role: "student"},
 

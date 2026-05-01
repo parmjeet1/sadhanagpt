@@ -85,6 +85,7 @@ export const sendEmailOtp = asyncHandler(async (req, res) => {
   return res.json({
     status: 1,
     code: 200,
+    otp,
     message: 'OTP sent successfully to your email.',
   });
 });
@@ -182,3 +183,39 @@ export const downloadErrorLog = asyncHandler(async (req, res) => {
 
     fileStream.pipe(res);
 });
+
+
+export const saveSubscription = async (req, res) => {
+    try {
+        const { user_id, subscription } = req.body;
+        console.log("Received subscription:", req.body);
+        if (!user_id || !subscription) {
+            return res.status(400).json({ status: 0, message: "Missing required data" });
+        }
+        const endpoint = subscription.endpoint;
+        const p256dh = subscription.keys.p256dh;
+        const auth = subscription.keys.auth;
+        // Check if this specific subscription already exists to avoid duplicates
+        const [existing] = await db.execute(
+            `SELECT id FROM push_subscriptions WHERE endpoint = ?`, 
+            [endpoint]
+        );
+        if (existing.length > 0) {
+            // If the endpoint exists but the user_id changed (e.g. someone else logged into this browser), update it
+            await db.execute(
+                `UPDATE push_subscriptions SET user_id = ?, p256dh = ?, auth = ? WHERE endpoint = ?`,
+                [user_id, p256dh, auth, endpoint]
+            );
+        } else {
+            // Insert new subscription
+            await db.execute(
+                `INSERT INTO push_subscriptions (user_id, endpoint, p256dh, auth) VALUES (?, ?, ?, ?)`,
+                [user_id, endpoint, p256dh, auth]
+            );
+        }
+        res.status(200).json({ status: 1, message: "Subscription saved successfully" });
+    } catch (error) {
+        console.error("Error saving subscription:", error);
+        res.status(500).json({ status: 0, message: "Server error" });
+    }
+};
