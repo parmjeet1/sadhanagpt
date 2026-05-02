@@ -133,8 +133,8 @@ process.on("warning", (warning) => {
       });
       // Schedule: Every Saturday (6) at 10:00 AM
       // 
-      // cron.schedule('0 10 * * 6', async () => {
-     cron.schedule('*/1  * * * *', async () => {
+      cron.schedule('0 10 * * 6', async () => {
+    //  cron.schedule('*/1  * * * *', async () => {
 
           console.log("⏰ Saturday 10 AM: Dispatching Sadhana Reminders...");
         
