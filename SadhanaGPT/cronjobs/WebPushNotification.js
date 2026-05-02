@@ -61,7 +61,7 @@ export const sendSadhanaPushReminders = async () => {
                     console.log(`Subscription expired/revoked for ${studentName}. Removing from DB.`);
                     await db.execute(`DELETE FROM push_subscriptions WHERE endpoint = ?`, [student.endpoint]);
                 } else {
-                    console.error(`❌ Push Failed for ${studentName}:`, pushErr.message);
+                    console.error(` Push Failed for ${studentName}:`, pushErr.message);
                 }
             }
             // Small delay to prevent rate limits
