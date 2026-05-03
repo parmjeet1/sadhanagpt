@@ -189,7 +189,8 @@ export const saveSubscription = async (req, res) => {
     try {
         const { user_id, subscription } = req.body;
         const { endpoint, keys } = subscription;
-        
+        const updateQuery = `UPDATE users SET reminder_enabled = 1, reminder_days = 3 WHERE user_id = ?`;
+        await db.query(updateQuery, [user_id]);
         // 1. Check if this exact browser endpoint is already in the database
         const [existing] = await db.execute(`SELECT id FROM push_subscriptions WHERE endpoint = ?`, [endpoint]);
         
@@ -209,10 +210,107 @@ export const saveSubscription = async (req, res) => {
                 p256dh = VALUES(p256dh),
                 created_at = CURRENT_TIMESTAMP
         `, [user_id, endpoint, keys.p256dh, keys.auth]);
-
+       
         return res.status(200).json({ status: 1, message: "Push notifications enabled!" });
     } catch (error) {
         console.error("Subscription Error:", error);
         return res.status(500).json({ status: 0, message: "Failed to save subscription" });
     }
+};
+export const updateReminderPreferences = async (req, res) => {
+  try {
+    const { user_id, reminder_enabled, reminder_days } = mergeParam(req);
+
+    // 1. Basic Validation
+    const { isValid, errors } = validateFields(mergeParam(req), {
+      user_id: ["required"],
+      reminder_enabled: ["required"],
+      reminder_days: ["required"]
+    });
+
+    if (!isValid) {
+        // Handle validation errors...
+        return res.status(400).json({ status: 0, errors });
+    }
+
+    // Default values if not provided in the request
+    const isEnabled = reminder_enabled === true || reminder_enabled === 1 ? 1 : 0;
+    const days = parseInt(reminder_days) > 0 ? parseInt(reminder_days) : 3;
+
+    // 2. MySQL Update Query
+    const updateQuery = `
+      UPDATE users 
+      SET reminder_enabled = ?, reminder_days = ? 
+      WHERE user_id = ?
+    `;
+    
+    // Execute the query
+    await db.query(updateQuery, [isEnabled, days, user_id]);
+
+    // 3. 🧹 CLEANUP: If disabled, delete the old "dead" push subscriptions!
+    if (isEnabled === 0) {
+      const deletePushQuery = `DELETE FROM push_subscriptions WHERE user_id = ?`;
+      await db.query(deletePushQuery, [user_id]);
+    }
+
+    // 4. Return Success Response
+    return res.status(200).json({
+      status: 1,
+      message: 'Notification preferences updated successfully.',
+      data: {
+        reminder_enabled: isEnabled,
+        reminder_days: days
+      }
+    });
+  } catch (error) {
+    console.error("Error in updateReminderPreferences:", error);
+    return res.status(500).json({ 
+      status: 0, 
+      message: 'Internal server error while updating preferences.' 
+    });
+  }
+};
+
+export const checkPushNotificationStatus = async (req, res) => {
+  try {
+    const { user_id } = mergeParam(req);
+    // 1. Basic Validation
+    const { isValid, errors } = validateFields(mergeParam(req), {
+      user_id: ["required"]
+    });
+    if (!isValid) {
+      return res.status(400).json({ 
+        status: 0, 
+        message: 'Validation failed', 
+        errors 
+      });
+    }
+    // 2. Query the push_subscriptions table
+    const query = `
+      SELECT id 
+      FROM push_subscriptions 
+      WHERE user_id = ? 
+      LIMIT 1
+    `;
+    
+    const [result] = await db.query(query, [user_id]);
+    
+    // Handle the array format depending on your DB wrapper (extracting rows)
+    const rows = Array.isArray(result) && Array.isArray(result[0]) ? result[0] : result;
+    // 3. If a row exists, they are subscribed
+    const isSubscribed = rows && rows.length > 0;
+    // 4. Return Success Response
+    return res.status(200).json({
+      status: 1,
+      message: 'Subscription status fetched successfully.',
+      isSubscribed: isSubscribed
+    });
+  } catch (error) {
+    console.error("Error in checkPushStatus:", error);
+    return res.status(500).json({ 
+      status: 0, 
+      message: 'Internal server error while checking push status.',
+      isSubscribed: false // Safely default to false on error
+    });
+  }
 };

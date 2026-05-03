@@ -20,7 +20,7 @@
       import { processRewardRules } from './SadhanaGPT/Controllers/CronJobController.js';
       import { processInactivityReminders,dispatchWeeklyCounsellorReports } from './SadhanaGPT/cronjobs/Email-notificatiion.js';
       import { sendSadhanaWhatsappReminders } from './SadhanaGPT/cronjobs/WhatsAppMessage.js';
-import { sendSadhanaPushReminders } from './SadhanaGPT/cronjobs/WebPushNotification.js';
+import { freqSadhnaCronjob, sendSadhanaPushReminders } from './SadhanaGPT/cronjobs/WebPushNotification.js';
      process.on("unhandledRejection", (reason) => {
   logger.error(`Unhandled Rejection: ${reason}`);
 });
@@ -140,5 +140,5 @@ process.on("warning", (warning) => {
         
           await sendSadhanaPushReminders();
       });
-       
+       freqSadhnaCronjob();
 app.use(errorHandler)
