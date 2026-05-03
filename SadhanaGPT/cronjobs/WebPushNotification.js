@@ -262,8 +262,8 @@ const sendPush = async (user_id, title, body) => {
 
   export const   freqSadhnaCronjob = () => {
   // Runs once every day at 09:00 AM server time
-//   cron.schedule('0 9 * * *', checkAndSendReminders); 
-cron.schedule('* * * * *', checkAndSendReminders); 
+  cron.schedule('0 9 * * *', checkAndSendReminders); 
+// cron.schedule('* * * * *', checkAndSendReminders); 
 
 
 };
