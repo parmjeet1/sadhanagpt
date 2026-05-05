@@ -661,7 +661,8 @@ export const studentlist = asyncHandler(async (req, resp) => {
        label_id,
       search_text = "",
       rowSelected,
-      categroy
+      categroy,
+      
     } = mergeParam(req);
 
     const { isValid, errors } = validateFields(mergeParam(req), {
@@ -685,6 +686,7 @@ DATEDIFF(CURDATE(), DATE(us.created_at)) + 1 AS total_days,
     const params = {
       tableName: "users us",
       columns: `
+      uc.performance_notification as notification_status,
       (SELECT ll.name 
        FROM user_assignments ua 
        INNER JOIN labels_list ll ON ll.id = ua.label_id 

@@ -136,8 +136,11 @@ const checkAndSendReminders = async () => {
     const usersQuery = `SELECT user_id, name, 
     reminder_days FROM users WHERE reminder_enabled = 1`;
     const [users] = await db.query(usersQuery);
-console.log("Users with reminders enabled:", users);
+
+  
     for (const user of users) {
+       
+
 
       const N = parseInt(user.reminder_days) || 3;
 console.log("for thes days",user.reminder_days,'user.user_id',user.user_id)
@@ -232,6 +235,8 @@ console.log("case2")
           `Hare Krishna ${user.name}, your ${N}-day average fell below target for: ${uniqueMissed}.`
         );
       }
+
+      //
     }
     
     console.log("Analysis Completed.");
@@ -240,10 +245,8 @@ console.log("case2")
   }
 };
 
-/**
- * Helper to dispatch the web push 
- */
-const sendPush = async (user_id, title, body) => {
+
+const sendPush = async (user_id, title, body,url) => {
   const pushSubscription = await getUserPushSubscription(user_id);
   if (pushSubscription) {
     const payload = JSON.stringify({ title, body, url: "/student/dashboard" });
@@ -260,10 +263,63 @@ const sendPush = async (user_id, title, body) => {
   }
 };
 
+
+
+// Returns a list of irregular students and the reasons why
+const analyzeStudentPerformance = async (user) => {
+  const N = parseInt(user.reminder_days) || 3;
+  const reportsQuery = `SELECT activity_id, count FROM daily_report WHERE user_id = ? AND 
+  activity_date >= DATE_SUB(CURDATE(), INTERVAL ? DAY)`;
+  const [reports] = await db.query(reportsQuery, [user.user_id, N]);
+
+  if (reports.length === 0) {
+    return { isIrregular: true, reason: `No activity for ${N} days` };
+  }
+
+  // ... (Your existing logic for calculating averages) ...
+  // let missedTargets = [];
+  // ...
+  
+  if (missedTargets.length > 0) {
+    return { isIrregular: true, reason: `Below target: ${missedTargets.join(', ')}` };
+  }
+
+  return { isIrregular: false };
+};
+
+export const notifyMentorsOfIrregularMentees = async () => {
+  const [users] = await db.query(`SELECT user_id, name, reminder_days FROM users`);
+  const mentorAlerts = {};
+
+  for (const user of users) {
+    const analysis = await analyzeStudentPerformance(user);
+    
+    if (analysis.isIrregular) {
+      const [mentors] = await db.execute(`
+        SELECT uc.counsller_id as id, c.name FROM user_counsellors uc
+        JOIN users c ON uc.counsller_id = c.user_id
+        WHERE uc.user_id = ? AND uc.performance_notification = 1
+      `, [user.user_id]);
+
+      for (const mentor of mentors) {
+        if (!mentorAlerts[mentor.id]) mentorAlerts[mentor.id] = { name: mentor.name, count: 0 };
+        mentorAlerts[mentor.id].count++;
+      }
+    }
+  }
+
+  // Send summary to mentors
+  for (const mentorId in mentorAlerts) {
+    const m = mentorAlerts[mentorId];
+    await sendPush(mentorId, "Mentee Alerts", `You have ${m.count} mentees who need attention.`, "/counsellor/irregular-mentees");
+  }
+};
+
   export const   freqSadhnaCronjob = () => {
   // Runs once every day at 09:00 AM server time
   cron.schedule('0 9 * * *', checkAndSendReminders); 
 // cron.schedule('* * * * *', checkAndSendReminders); 
+  cron.schedule('15 9 * * *', notifyMentorsOfIrregularMentees); 
 
 
 };

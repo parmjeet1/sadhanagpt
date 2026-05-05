@@ -8,6 +8,7 @@ import { apiAuthentication, checkCounsellor } from "../middleware/apiAuthenticat
 import { addCenter, addContent, addLable, addNote, addRewardRules, aiReport, assignStudentToCenter, bulkaiReport, bulkAssignLabel, bulkAssignStudents, centerlist, contentListCounsellor, CustomNotification, deleteCenter, deleteLable, deleteNote, downloadUserReport, editCenter, editLable, editNote, LableList, sadhanReportlist, studentActivityDetail, studentDetails, studentlist, studentNotesList, studentsadhnalist, subCounslorCenterlist, suCounslorList, updateReportSettings } from "../SadhanaGPT/Mentors/CounslerController.js";
 import { handleFileUpload } from "../utils/fileUpload.js";
 import { sendBulknEmails } from "../SadhanaGPT/cronjobs/Email-notificatiion.js";
+import { irregularMenteesList, toggleMenteeNotification } from "../SadhanaGPT/Mentors/NotificationController.js";
 
 const router = Router();
 
@@ -140,8 +141,11 @@ const authzAndAuthRoutes = [
         // {method: 'get', path: '/user-activity-details', handler: activitydetail},
     {method: 'post',     path: '/toggle-email-report',handler: updateReportSettings,role: "counsellor"},
     { method: 'get', path: '/counsellor-content-list', handler: contentListCounsellor, role: "counsellor" },
+    ,
+    { method: 'post', path: '/toggle-mentee-notification', handler: toggleMenteeNotification, role: "counsellor" },
+    { method: 'get', path: '/irregular-mentees', handler: irregularMenteesList , role: "counsellor" },
 
-
+//
         
 
         //student detail page.      
