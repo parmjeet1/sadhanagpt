@@ -29,7 +29,7 @@ class EmailQueue extends EventEmitter {
             try {
                 const mailOptions = {
                     // Gmail forces you to send from your authenticated user email address
-                    from: `"Paramjeet" <${process.env.GMAIL_USER}>`, 
+                    from: `<${process.env.GMAIL_USER}>`, 
                   
                     // from: `"Sadhana Team" <${process.env.GMAIL_USER}>`, 
                     to: toAddress,
