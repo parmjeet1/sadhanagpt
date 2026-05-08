@@ -219,12 +219,12 @@ export const saveSubscription = async (req, res) => {
 };
 export const updateReminderPreferences = async (req, res) => {
   try {
-    const { user_id, reminder_enabled, reminder_days } = mergeParam(req);
+    const { user_id, reminder_enabled=false, reminder_days=3 } = mergeParam(req);
 
     // 1. Basic Validation
     const { isValid, errors } = validateFields(mergeParam(req), {
       user_id: ["required"],
-      reminder_enabled: ["required"],
+      // reminder_enabled: ["required"],
       reminder_days: ["required"]
     });
 
@@ -248,10 +248,10 @@ export const updateReminderPreferences = async (req, res) => {
     await db.query(updateQuery, [isEnabled, days, user_id]);
 
     // 3. 🧹 CLEANUP: If disabled, delete the old "dead" push subscriptions!
-    if (isEnabled === 0) {
-      const deletePushQuery = `DELETE FROM push_subscriptions WHERE user_id = ?`;
-      await db.query(deletePushQuery, [user_id]);
-    }
+    // if (isEnabled === 0) {
+    //   const deletePushQuery = `DELETE FROM push_subscriptions WHERE user_id = ?`;
+    //   await db.query(deletePushQuery, [user_id]);
+    // }
 
     // 4. Return Success Response
     return res.status(200).json({

@@ -91,7 +91,7 @@ process.on("warning", (warning) => {
       app.use(passport.initialize());
       app.use(passport.session());
 
-      app.get('/google-call-back', (req, res) => {
+      app.get('/ping', (req, res) => {
         return res.json({ status: 1, code: 200, message: "google-call-back" })
 
       });

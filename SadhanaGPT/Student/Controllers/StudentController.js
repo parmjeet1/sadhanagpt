@@ -1683,7 +1683,9 @@ export const olduserProfile = asyncHandler(async (req, resp) => {
   ----------------------------*/
   const [users] = await db.execute(
     `
-    SELECT 
+    SELECT
+    
+    u.reminder_enabled as reminder_status, 
     u.auto_report_status,
     u.report_frequency_days,
       u.user_id,
@@ -1741,6 +1743,7 @@ export const olduserProfile = asyncHandler(async (req, resp) => {
     code: 200,
     data: {
       user: {
+        reminder_status:userData.reminder_status,
         auto_report_status:userData.auto_report_status,
         report_frequency_days: userData.report_frequency_days ,
         name: userData.name,

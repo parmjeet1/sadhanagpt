@@ -128,194 +128,240 @@ const getUserPushSubscription = async (user_id) => {
   }
 };
 
-const checkAndSendReminders = async () => {
-  console.log("Starting Advanced Activity Analysis...");
+  const checkAndSendReminders = async () => {
+    console.log("Starting Advanced Activity Analysis...");
 
-  try {
-    // 1. Get all users with reminders enabled
-    const usersQuery = `SELECT user_id, name, 
-    reminder_days FROM users WHERE reminder_enabled = 1`;
-    const [users] = await db.query(usersQuery);
+    try {
+      // 1. Get all users with reminders enabled
+      const usersQuery = `SELECT user_id, name, 
+      reminder_days FROM users WHERE reminder_enabled = 1`;
+      const [users] = await db.query(usersQuery);
 
-  
-    for (const user of users) {
-       
-
-
-      const N = parseInt(user.reminder_days) || 3;
-console.log("for thes days",user.reminder_days,'user.user_id',user.user_id)
-      // 2. Get all reports for this user in the last N days
-      const reportsQuery = `
-        SELECT activity_id, count, activity_date 
-        FROM daily_report 
-        WHERE user_id = ? 
-        AND activity_date >= DATE_SUB(CURDATE(), INTERVAL ? DAY)
-      `;
-
-      const [reports] = await db.query(reportsQuery, [user.user_id, N]);
-// console.log(`reports`,reports)
-      // CASE 1: Total Miss (Zero activity in N days)
-      if (reports.length === 0) {
-        sendPush(
-          user.user_id, 
-          "We Miss You!", 
-          `Hare Krishna ${user.name}, you haven't logged any activities for ${N} days!`
-        );
-        continue; // They missed everything, skip checking individual averages
-      }
-console.log("case2")
-      // CASE 2: Check Individual Averages
-      // Fetch only activities belonging to this user or global activities (own_by = 0)
-      const activitiesQuery = `
-        SELECT activity_id, name, unit, activity_type, target 
-        FROM fix_activities 
-        WHERE user_id = ? OR own_by = 0 OR user_id IS NULL OR user_id = ''
-      `;
-      const [activities] = await db.query(activitiesQuery, [user.user_id]);
-
-      let missedTargets = [];
-
-      for (const activity of activities) {
-        // Find reports specific to this activity in the last N days
-        const activityReports = reports.filter(r => String(r.activity_id) === String(activity.activity_id));
-
-        // --- Logic for Numbers & Minutes (Chanting, Hearing, Reading) ---
-        if (['min', 'numb', 'rounds', 'page'].includes(activity.activity_type) || ['min', 'rounds'].includes(activity.unit)) {
-          const targetPerDay = parseFloat(activity.target);
-          if (isNaN(targetPerDay)) continue;
-
-          const cumulativeTarget = targetPerDay * N;
-          const threshold = cumulativeTarget / 2; // 50% Rule
-
-          let totalAchieved = 0;
-          // Calculate sum even if activityReports is empty (it will be 0)
-          activityReports.forEach(r => {
-            totalAchieved += parseFloat(r.count) || 0;
-          });
-
-          // If they missed it entirely (0) OR achieved less than threshold
-          if (totalAchieved < threshold) {
-            missedTargets.push(activity.name);
-          }
-        }
-
-        // --- Logic for Time Based (Wake up time) ---
-        else if (activity.activity_type === 'time' || activity.unit === 'time') {
-          // If they didn't log time at all, they missed it
-          if (activityReports.length === 0) {
-            missedTargets.push(activity.name);
-            continue;
-          }
-
-          const targetMins = parseTimeToMinutes(activity.target);
-          let totalMinsAchieved = 0;
-          
-          activityReports.forEach(r => {
-            totalMinsAchieved += parseTimeToMinutes(r.count);
-          });
-
-          // Average time over the days they actually logged it
-          const avgMinsAchieved = totalMinsAchieved / activityReports.length;
-
-          // If average wake up time is LATER than target time (e.g. avg is 6 AM > target 4 AM)
-          if (avgMinsAchieved > targetMins) {
-             missedTargets.push(activity.name);
-          }
-        }
-      }
-
-      // 4. Send Alert if any specific targets fell below average
-      if (missedTargets.length > 0) {
-        // Unique names in case of duplicates
-        const uniqueMissed = [...new Set(missedTargets)].join(', ');
+    
+      for (const user of users) {
         
-        await sendPush(
-          user.user_id, 
-          "Activity Alert", 
-          `Hare Krishna ${user.name}, your ${N}-day average fell below target for: ${uniqueMissed}.`
-        );
-      }
-
-      //
-    }
-    
-    console.log("Analysis Completed.");
-  } catch (error) {
-    console.error("Error in checkAndSendReminders:", error);
-  }
-};
 
 
-const sendPush = async (user_id, title, body,url) => {
-  const pushSubscription = await getUserPushSubscription(user_id);
-  if (pushSubscription) {
-    const payload = JSON.stringify({ title, body, url: "/student/dashboard" });
-    
-    await webpush.sendNotification(pushSubscription, payload)
-      .catch(err => {
-        if (err.statusCode === 410) {
-          console.log(`Subscription expired for user ${user_id}. You might want to delete it from DB.`);
-          // OPTIONAL: Delete the expired subscription from database here
-        } else {
-          console.error(`Web Push Error for user ${user_id}:`, err);
+        const N = parseInt(user.reminder_days) || 3;
+  console.log("for thes days",user.reminder_days,'user.user_id',user.user_id)
+        // 2. Get all reports for this user in the last N days
+        const reportsQuery = `
+          SELECT activity_id, count, activity_date 
+          FROM daily_report 
+          WHERE user_id = ? 
+          AND activity_date >= DATE_SUB(CURDATE(), INTERVAL ? DAY)
+        `;
+
+        const [reports] = await db.query(reportsQuery, [user.user_id, N]);
+  // console.log(`reports`,reports)
+        // CASE 1: Total Miss (Zero activity in N days)
+        if (reports.length === 0) {
+          sendPush(
+            user.user_id, 
+            "We Miss You!", 
+            `Hare Krishna ${user.name}, you haven't logged any activities for ${N} days!`
+          );
+          continue; // They missed everything, skip checking individual averages
         }
-      });
-  }
-};
+  console.log("case2")
+        // CASE 2: Check Individual Averages
+        // Fetch only activities belonging to this user or global activities (own_by = 0)
+        const activitiesQuery = `
+          SELECT activity_id, name, unit, activity_type, target 
+          FROM fix_activities 
+          WHERE user_id = ? OR own_by = 0 OR user_id IS NULL OR user_id = ''
+        `;
+        const [activities] = await db.query(activitiesQuery, [user.user_id]);
+
+        let missedTargets = [];
+
+        for (const activity of activities) {
+          // Find reports specific to this activity in the last N days
+          const activityReports = reports.filter(r => String(r.activity_id) === String(activity.activity_id));
+
+          // --- Logic for Numbers & Minutes (Chanting, Hearing, Reading) ---
+          if (['min', 'numb', 'rounds', 'page'].includes(activity.activity_type) || ['min', 'rounds'].includes(activity.unit)) {
+            const targetPerDay = parseFloat(activity.target);
+            if (isNaN(targetPerDay)) continue;
+
+            const cumulativeTarget = targetPerDay * N;
+            const threshold = cumulativeTarget / 2; // 50% Rule
+
+            let totalAchieved = 0;
+            // Calculate sum even if activityReports is empty (it will be 0)
+            activityReports.forEach(r => {
+              totalAchieved += parseFloat(r.count) || 0;
+            });
+
+            // If they missed it entirely (0) OR achieved less than threshold
+            if (totalAchieved < threshold) {
+              missedTargets.push(activity.name);
+            }
+          }
+
+          // --- Logic for Time Based (Wake up time) ---
+          else if (activity.activity_type === 'time' || activity.unit === 'time') {
+            // If they didn't log time at all, they missed it
+            if (activityReports.length === 0) {
+              missedTargets.push(activity.name);
+              continue;
+            }
+
+            const targetMins = parseTimeToMinutes(activity.target);
+            let totalMinsAchieved = 0;
+            
+            activityReports.forEach(r => {
+              totalMinsAchieved += parseTimeToMinutes(r.count);
+            });
+
+            // Average time over the days they actually logged it
+            const avgMinsAchieved = totalMinsAchieved / activityReports.length;
+
+            // If average wake up time is LATER than target time (e.g. avg is 6 AM > target 4 AM)
+            if (avgMinsAchieved > targetMins) {
+              missedTargets.push(activity.name);
+            }
+          }
+        }
+
+        // 4. Send Alert if any specific targets fell below average
+        if (missedTargets.length > 0) {
+          // Unique names in case of duplicates
+          const uniqueMissed = [...new Set(missedTargets)].join(', ');
+          
+          await sendPush(
+            user.user_id, 
+            "Activity Alert", 
+            `Hare Krishna ${user.name}, your ${N}-day average fell below target for: ${uniqueMissed}.`
+          );
+        }
+
+        //
+      }
+      
+      console.log("Analysis Completed.");
+    } catch (error) {
+      console.error("Error in checkAndSendReminders:", error);
+    }
+  };
+
+
+  const sendPush = async (user_id, title, body,url) => {
+    const pushSubscription = await getUserPushSubscription(user_id);
+    if (pushSubscription) {
+      const payload = JSON.stringify({ title, body, url: "/student/dashboard" });
+      
+      await webpush.sendNotification(pushSubscription, payload)
+        .catch(err => {
+          if (err.statusCode === 410) {
+            console.log(`Subscription expired for user ${user_id}. You might want to delete it from DB.`);
+            // OPTIONAL: Delete the expired subscription from database here
+          } else {
+            console.error(`Web Push Error for user ${user_id}:`, err);
+          }
+        });
+    }
+  };
 
 
 
 // Returns a list of irregular students and the reasons why
-const analyzeStudentPerformance = async (user) => {
-  const N = parseInt(user.reminder_days) || 3;
-  const reportsQuery = `SELECT activity_id, count FROM daily_report WHERE user_id = ? AND 
-  activity_date >= DATE_SUB(CURDATE(), INTERVAL ? DAY)`;
-  const [reports] = await db.query(reportsQuery, [user.user_id, N]);
+    const analyzeStudentPerformance = async (user) => {
+      const N = parseInt(user.reminder_days) || 3;
+      const reportsQuery = `SELECT activity_id, count FROM daily_report WHERE user_id = ? AND 
+      activity_date >= DATE_SUB(CURDATE(), INTERVAL ? DAY)`;
+      const [reports] = await db.query(reportsQuery, [user.user_id, N]);
 
-  if (reports.length === 0) {
-    return { isIrregular: true, reason: `No activity for ${N} days` };
-  }
-
-  // ... (Your existing logic for calculating averages) ...
-  // let missedTargets = [];
-  // ...
-  
-  if (missedTargets.length > 0) {
-    return { isIrregular: true, reason: `Below target: ${missedTargets.join(', ')}` };
-  }
-
-  return { isIrregular: false };
-};
-
-export const notifyMentorsOfIrregularMentees = async () => {
-  const [users] = await db.query(`SELECT user_id, name, reminder_days FROM users`);
-  const mentorAlerts = {};
-
-  for (const user of users) {
-    const analysis = await analyzeStudentPerformance(user);
-    
-    if (analysis.isIrregular) {
-      const [mentors] = await db.execute(`
-        SELECT uc.counsller_id as id, c.name FROM user_counsellors uc
-        JOIN users c ON uc.counsller_id = c.user_id
-        WHERE uc.user_id = ? AND uc.performance_notification = 1
-      `, [user.user_id]);
-
-      for (const mentor of mentors) {
-        if (!mentorAlerts[mentor.id]) mentorAlerts[mentor.id] = { name: mentor.name, count: 0 };
-        mentorAlerts[mentor.id].count++;
+      if (reports.length === 0) {
+        return { isIrregular: true, reason: `No activity for ${N} days` };
       }
-    }
-  }
 
-  // Send summary to mentors
-  for (const mentorId in mentorAlerts) {
-    const m = mentorAlerts[mentorId];
-    await sendPush(mentorId, "Mentee Alerts", `You have ${m.count} mentees who need attention.`, "/counsellor/irregular-mentees");
-  }
-};
+      // ... (Your existing logic for calculating averages) ...
+      // let missedTargets = [];
+      // ...
+      
+      if (missedTargets.length > 0) {
+        return { isIrregular: true, reason: `Below target: ${missedTargets.join(', ')}` };
+      }
 
+      return { isIrregular: false };
+    };
+
+    export const notifyMentorsOfIrregularMentees = async () => {
+      const [users] = await db.query(`SELECT user_id, name, reminder_days FROM users`);
+      const mentorAlerts = {};
+
+      for (const user of users) {
+        const analysis = await analyzeStudentPerformance(user);
+        
+        if (analysis.isIrregular) {
+          const [mentors] = await db.execute(`
+            SELECT uc.counsller_id as id, c.name FROM user_counsellors uc
+            JOIN users c ON uc.counsller_id = c.user_id
+            WHERE uc.user_id = ? AND uc.performance_notification = 1
+          `, [user.user_id]);
+
+          for (const mentor of mentors) {
+            if (!mentorAlerts[mentor.id]) mentorAlerts[mentor.id] = { name: mentor.name, count: 0 };
+            mentorAlerts[mentor.id].count++;
+          }
+        }
+      }
+
+      // Send summary to mentors
+      for (const mentorId in mentorAlerts) {
+        const m = mentorAlerts[mentorId];
+        await sendPush(mentorId, "Mentee Alerts", `You have ${m.count} mentees who need attention.`, "/counsellor/irregular-mentees");
+      }
+    };
+    const sendDailyGlobalReminder = async () => {
+        console.log("Starting daily 8 PM global reminder...");
+        try {
+            // Fetch ALL push subscriptions directly
+            const query = `SELECT id, user_id, endpoint, p256dh, auth FROM push_subscriptions`;
+            const result = await db.query(query);
+            
+            // Extract rows safely (adjust [0] based on your DB wrapper)
+            const subscriptions = Array.isArray(result) && Array.isArray(result[0]) ? result[0] : result;
+            if (!subscriptions || subscriptions.length === 0) {
+                console.log("No push subscriptions found to notify.");
+                return;
+            }
+            const payload = JSON.stringify({
+                title: "Daily Sadhana 🔔",
+                body: "Hare Krishna! Please fill your Sadhana for today. 🙏",
+                url: "/" 
+            });
+            // Loop through and send to everyone
+            for (const sub of subscriptions) {
+                const pushConfig = {
+                    endpoint: sub.endpoint,
+                    keys: {
+                        p256dh: sub.p256dh,
+                        auth: sub.auth
+                    }
+                };
+                await webpush.sendNotification(pushConfig, payload)
+                    .catch(async (err) => {
+                        // 410 means the user revoked permission or the browser token expired
+                        if (err.statusCode === 410) {
+                            console.log(`Subscription expired for user ${sub.user_id}. Cleaning up DB...`);
+                            await db.query(`DELETE FROM push_subscriptions WHERE id = ?`, [sub.id]);
+                        } else {
+                            console.error(`Failed to send to user ${sub.user_id}:`, err);
+                        }
+                    });
+            }
+            
+            console.log(`Finished sending global reminders to ${subscriptions.length} devices.`);
+        } catch (error) {
+            console.error("Error in global reminder cron:", error);
+        }
+    };
   export const   freqSadhnaCronjob = () => {
+  
+    cron.schedule('0 20 * * *', sendDailyGlobalReminder); 
+    
   // Runs once every day at 09:00 AM server time
   cron.schedule('0 9 * * *', checkAndSendReminders); 
 // cron.schedule('* * * * *', checkAndSendReminders); 
