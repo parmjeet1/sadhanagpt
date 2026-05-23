@@ -358,14 +358,24 @@ const getUserPushSubscription = async (user_id) => {
             console.error("Error in global reminder cron:", error);
         }
     };
-  export const   freqSadhnaCronjob = () => {
   
-    cron.schedule('0 20 * * *', sendDailyGlobalReminder); 
-    
-  // Runs once every day at 09:00 AM server time
-  cron.schedule('0 9 * * *', checkAndSendReminders); 
-// cron.schedule('* * * * *', checkAndSendReminders); 
-  cron.schedule('15 9 * * *', notifyMentorsOfIrregularMentees); 
 
+export const freqSadhnaCronjob = () => {
+
+  cron.schedule('0 20 * * *', async () => {
+    await sendDailyGlobalReminder();
+  });
+
+  // Runs every day at 9 AM
+  cron.schedule('0 20 * * *', async () => {
+    await checkAndSendReminders();
+  });
+
+  cron.schedule('15 9 * * *', async () => {
+    await notifyMentorsOfIrregularMentees();
+  });
+   cron.schedule('0 10 * * 6', async () => {
+    await sendSadhanaPushReminders();
+  });
 
 };

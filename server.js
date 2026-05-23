@@ -70,15 +70,7 @@ process.on("warning", (warning) => {
       app.use(express.json());
       app.use(bodyParser.json());
       app.use(cookieParser());
-      app.get('/ping', (req, res) => {
-        console.log("pong");
-           throw new Error("fail");
-
-        return res.json({ status: 1, code: 200, message: "latest updated v1" })
-        //   res.send('Server is alive');
-
-      });
-      app.use("/auth", authRoutes);
+    
 
       app.use(
         session({
@@ -91,14 +83,18 @@ process.on("warning", (warning) => {
       app.use(passport.initialize());
       app.use(passport.session());
 
-      app.get('/ping', (req, res) => {
-        return res.json({ status: 1, code: 200, message: "google-call-back" })
+        app.use("/auth", authRoutes);
 
-      });
 
 
       app.use('/api', Routes);
-     ;
+     app.get('/ping', (req, res) => {
+        console.log("pong");
+          
+        return res.json({ status: 1, code: 200, message: "latest updated v1" })
+        //   res.send('Server is alive');
+
+      });
 
 
       // start react git
@@ -133,12 +129,6 @@ process.on("warning", (warning) => {
       });
       // Schedule: Every Saturday (6) at 10:00 AM
       // 
-      cron.schedule('0 10 * * 6', async () => {
-    //  cron.schedule('*/1  * * * *', async () => {
-
-          console.log("⏰ Saturday 10 AM: Dispatching Sadhana Reminders...");
-        
-          await sendSadhanaPushReminders();
-      });
+     
        freqSadhnaCronjob();
 app.use(errorHandler)
