@@ -159,7 +159,8 @@ const getUserPushSubscription = async (user_id) => {
           sendPush(
             user.user_id, 
             "We Miss You!", 
-            `Hare Krishna ${user.name}, you haven't logged any activities for ${N} days!`
+            `Hare Krishna ${user.name},
+             you haven't logged any activities for ${N} days!`
           );
           continue; // They missed everything, skip checking individual averages
         }
@@ -232,7 +233,7 @@ const getUserPushSubscription = async (user_id) => {
           await sendPush(
             user.user_id, 
             "Activity Alert", 
-            `Hare Krishna ${user.name}, your ${N}-day average fell below target for: ${uniqueMissed}.`
+            `Hare Krishna ${user.name}, your ${N}-day average fell below target .`
           );
         }
 
