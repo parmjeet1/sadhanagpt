@@ -1,7 +1,6 @@
 # Agent Instructions: SadhanaGPT Backend Development Protocol
 
 > [!IMPORTANT]
-
 > **CRITICAL PROTOCOL FOR ALL AI CODING ASSISTANTS & AGENTS (e.g., Antigravity, Cursor, Copilot, etc.):**
 > Before designing any implementation plans, writing scripts, or making edits in this repository, **you are strictly required to read and fully parse this entire document**. 
 > Pay close attention to the **Database Schema & Spelling Gotchas** section, the utility functions reuse guidelines, and the **Plan, Implement, Review Workflow System** detailed below. Adhering to these constraints is mandatory to prevent system regressions and bugs.
