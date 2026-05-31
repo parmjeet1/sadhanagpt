@@ -112,21 +112,25 @@ process.on("warning", (warning) => {
 
 
 
-      // for 12 pm every day '0 12 * * *
-      // cron.schedule('*/1  * * * *', async () => {
+      
+      // cron.schedule('0 0 * * 7', async () => {
 
-      // // dispatchWeeklyCounsellorReports();  
-      // // processInactivityReminders();
-      //   // processRewardRules();
+      //   await dispatchWeeklyCounsellorReports();
+
+
+
       // });
-      //  7th day of every month at 12:00 PM
-      cron.schedule('0 0 * * 7', async () => {
+      cron.schedule(
+  '0 0 * * 7',
+  async () => {
+    console.log('Running dispatchWeeklyCounsellorReports:', new Date());
 
-        await dispatchWeeklyCounsellorReports();
-
-
-
-      });
+    await dispatchWeeklyCounsellorReports();
+  },
+  {
+    timezone: 'Asia/Kolkata',
+  }
+);
       // Schedule: Every Saturday (6) at 10:00 AM
       // 
      
