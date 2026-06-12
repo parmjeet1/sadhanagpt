@@ -89,7 +89,7 @@ process.on("warning", (warning) => {
         
 
 
-    app.use('/trip-api', TripaRoutes);
+    app.use('/api/trip-api', TripaRoutes);
 
     app.use('/api', Routes);
      app.get('/ping', (req, res) => {
