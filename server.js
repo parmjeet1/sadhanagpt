@@ -21,6 +21,7 @@
       import { processInactivityReminders,dispatchWeeklyCounsellorReports } from './SadhanaGPT/cronjobs/Email-notificatiion.js';
       import { sendSadhanaWhatsappReminders } from './SadhanaGPT/cronjobs/WhatsAppMessage.js';
 import { freqSadhnaCronjob, sendSadhanaPushReminders } from './SadhanaGPT/cronjobs/WebPushNotification.js';
+import TripaRoutes from './tripa-app/src/routes/Routes.js';
      process.on("unhandledRejection", (reason) => {
   logger.error(`Unhandled Rejection: ${reason}`);
 });
@@ -41,15 +42,16 @@ process.on("warning", (warning) => {
       const __dirname = path.dirname(__filename);
 
       const corsOptions = {
-        origin: [
-          "https://sadhanagpt.com",
-          "http://sadhanagpt.com",
-          "http://localhost:5173",
-          "https://www.sadhanagpt.com",
+        // origin: [
+        //   "https://sadhanagpt.com",
+        //   "http://sadhanagpt.com",
+        //   "http://localhost:5173",
+        //   "https://www.sadhanagpt.com",
+        //   "http://localhost:8081"
           
           
-        ],
-        // origin : "*",
+        // ],
+        origin : "*",
         methods: 'GET, POST, PUT, DELETE',
         credentials: true
       };
@@ -84,10 +86,12 @@ process.on("warning", (warning) => {
       app.use(passport.session());
 
         app.use("/auth", authRoutes);
+        
 
 
+    app.use('/trip-api', TripaRoutes);
 
-      app.use('/api', Routes);
+    app.use('/api', Routes);
      app.get('/ping', (req, res) => {
         console.log("pong");
           
