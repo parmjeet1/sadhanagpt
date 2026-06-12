@@ -22,7 +22,11 @@
       import { sendSadhanaWhatsappReminders } from './SadhanaGPT/cronjobs/WhatsAppMessage.js';
 import { freqSadhnaCronjob, sendSadhanaPushReminders } from './SadhanaGPT/cronjobs/WebPushNotification.js';
 import TripaRoutes from './tripa-app/src/routes/Routes.js';
-     process.on("unhandledRejection", (reason) => {
+import crypto from 'crypto';
+global.crypto = crypto;
+
+
+process.on("unhandledRejection", (reason) => {
   logger.error(`Unhandled Rejection: ${reason}`);
 });
 
