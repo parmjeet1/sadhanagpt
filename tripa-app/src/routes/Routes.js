@@ -45,6 +45,7 @@ const publicRoutes = [
     { method: 'get',  path: '/rides',           handler: ridesController.list },
     { method: 'get',  path: '/rides/locations', handler: ridesController.getLocations },
     { method: 'post', path: '/rides',           handler: ridesController.create,       middlewares: [optionalAuth, ...createRideValidation, validate] },
+    { method: 'post', path: '/rides/:id/call',  handler: ridesController.incrementCallCount },
     
     // IMPORTANT: Parameterized routes must always be mounted last!
     { method: 'get',  path: '/rides/:id',       handler: ridesController.getOne },

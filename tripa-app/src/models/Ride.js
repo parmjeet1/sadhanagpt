@@ -9,6 +9,7 @@ const mapRow = (row) => ({
   driverName: row.driver_name,
   phoneNumber: row.phone_number,
   vehicleNumber: row.vehicle_number,
+  vehicleName: row.vehicle_name,
   fromLocation: row.from_location,
   fromLat: row.from_lat ? parseFloat(row.from_lat) : null,
   fromLng: row.from_lng ? parseFloat(row.from_lng) : null,
@@ -32,6 +33,8 @@ const mapRow = (row) => ({
   rideType: row.ride_type || 'sharing',
   status: row.status,
   userId: row.user_id,
+  callCount: row.call_count || 0,
+  allowReverse: row.allow_reverse ? true : false,
   createdAt: row.created_at,
   updatedAt: row.updated_at,
 });
@@ -44,18 +47,19 @@ const RideModel = {
     const id = uuidv4();
     await query(
       `INSERT INTO rides
-        (id, user_id, vehicle_id, driver_name, phone_number, vehicle_number,
+        (id, user_id, vehicle_id, driver_name, phone_number, vehicle_number, vehicle_name,
          from_location, from_lat, from_lng, to_location, to_lat, to_lng, travel_date, travel_time,
          booking_frequency, weekdays, specific_date,
-         price, price_mode, max_luggage, ride_type, status)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'active')`,
+         price, price_mode, max_luggage, ride_type, allow_reverse, status)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'active')`,
       [
         id,
         data.userId,
         data.vehicleId || null,
         data.driverName,
         data.phoneNumber,
-        data.vehicleNumber,
+        data.vehicleNumber || null,
+        data.vehicleName || null,
         data.fromLocation,
         data.fromLat || null,
         data.fromLng || null,
@@ -71,6 +75,7 @@ const RideModel = {
         data.priceMode || 'fixed',
         data.maxLuggage || 'medium',
         data.rideType || 'sharing',
+        data.allowReverse !== false ? 1 : 0,
       ]
     );
     const [rows] = await query(`SELECT * FROM rides WHERE id = ? LIMIT 1`, [id]);
@@ -88,6 +93,7 @@ const RideModel = {
       driver_name: data.driverName,
       phone_number: data.phoneNumber,
       vehicle_number: data.vehicleNumber,
+      vehicle_name: data.vehicleName,
       from_location: data.fromLocation,
       from_lat: data.fromLat,
       from_lng: data.fromLng,
@@ -103,6 +109,7 @@ const RideModel = {
       price_mode: data.priceMode,
       max_luggage: data.maxLuggage,
       ride_type: data.rideType,
+      allow_reverse: data.allowReverse !== undefined ? (data.allowReverse ? 1 : 0) : undefined,
       status: data.status,
     };
 
@@ -145,16 +152,21 @@ const RideModel = {
   /**
    * Search active rides with optional filters and pagination.
    */
-  search: async ({ fromLocation, toLocation, travelDate, userLat, userLng, page = 1, limit = 20 }) => {
+  search: async ({ fromLocation, toLocation, travelDate, userLat, userLng, rideType, page = 1, limit = 20 }) => {
     const conditions = [`status = 'active'`];
     const params = [];
+
+    if (rideType && ['sharing', 'personal'].includes(rideType)) {
+      conditions.push(`ride_type = ?`);
+      params.push(rideType);
+    }
 
     // Only apply the 100km GPS filter if the user hasn't explicitly typed a location search.
     // If they typed a location, allow them to search anywhere in the world.
     if (!fromLocation && !toLocation && userLat !== undefined && userLng !== undefined && !Number.isNaN(userLat) && !Number.isNaN(userLng)) {
       conditions.push(`
         (
-          (from_lat IS NULL OR to_lat IS NULL)
+          (from_lat IS NULL AND to_lat IS NULL)
           OR
           (from_lat IS NOT NULL AND from_lng IS NOT NULL AND (6371 * acos(cos(radians(?)) * cos(radians(from_lat)) * cos(radians(from_lng) - radians(?)) + sin(radians(?)) * sin(radians(from_lat)))) <= 100)
           OR
@@ -164,13 +176,22 @@ const RideModel = {
       params.push(userLat, userLng, userLat, userLat, userLng, userLat);
     }
 
-    if (fromLocation && fromLocation.trim()) {
-      conditions.push(`from_location LIKE ?`);
-      params.push(`%${fromLocation.trim()}%`);
-    }
-    if (toLocation && toLocation.trim()) {
-      conditions.push(`to_location LIKE ?`);
-      params.push(`%${toLocation.trim()}%`);
+    if (fromLocation && fromLocation.trim() && toLocation && toLocation.trim()) {
+      conditions.push(`(
+        (from_location LIKE ? AND to_location LIKE ?)
+        OR
+        (from_location LIKE ? AND to_location LIKE ? AND allow_reverse = 1)
+      )`);
+      params.push(`%${fromLocation.trim()}%`, `%${toLocation.trim()}%`, `%${toLocation.trim()}%`, `%${fromLocation.trim()}%`);
+    } else {
+      if (fromLocation && fromLocation.trim()) {
+        conditions.push(`(from_location LIKE ? OR (to_location LIKE ? AND allow_reverse = 1))`);
+        params.push(`%${fromLocation.trim()}%`, `%${fromLocation.trim()}%`);
+      }
+      if (toLocation && toLocation.trim()) {
+        conditions.push(`(to_location LIKE ? OR (from_location LIKE ? AND allow_reverse = 1))`);
+        params.push(`%${toLocation.trim()}%`, `%${toLocation.trim()}%`);
+      }
     }
 
     // Smart date-aware availability filter
@@ -273,6 +294,17 @@ const RideModel = {
       SELECT to_location AS name FROM rides WHERE ${whereTo}
     `, [...paramsFrom, ...paramsTo]);
     return rows.map(r => r.name);
+  },
+
+  /**
+   * Increment driver call button click counter.
+   */
+  incrementCallCount: async (id) => {
+    const [result] = await query(
+      `UPDATE rides SET call_count = call_count + 1 WHERE id = ?`,
+      [id]
+    );
+    return result.affectedRows > 0;
   },
 };
 

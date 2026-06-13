@@ -19,7 +19,8 @@ export const loginValidation = [
 ];
 
 export const createRideValidation = [
-  body('vehicleNumber').trim().notEmpty().withMessage('Vehicle number is required'),
+  body('vehicleName').trim().notEmpty().withMessage('Vehicle name is required'),
+  body('vehicleNumber').optional().trim(),
   body('fromLocation').trim().notEmpty().withMessage('From location is required'),
   body('toLocation').trim().notEmpty().withMessage('To location is required'),
   body('travelDate').notEmpty().withMessage('Travel date is required')

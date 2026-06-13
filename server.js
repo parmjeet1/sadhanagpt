@@ -23,7 +23,9 @@
 import { freqSadhnaCronjob, sendSadhanaPushReminders } from './SadhanaGPT/cronjobs/WebPushNotification.js';
 import TripaRoutes from './tripa-app/src/routes/Routes.js';
 import crypto from 'crypto';
-global.crypto = crypto;
+if (typeof globalThis.crypto === 'undefined') {
+  globalThis.crypto = crypto;
+}
 
 
 process.on("unhandledRejection", (reason) => {

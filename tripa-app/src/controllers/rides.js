@@ -12,7 +12,7 @@ const ridesController = {
    */
   list: async (req, res, next) => {
     try {
-      const { fromLocation, toLocation, travelDate, userLat, userLng, page = 1, limit = 20 } = req.query;
+      const { fromLocation, toLocation, travelDate, userLat, userLng, rideType, page = 1, limit = 20 } = req.query;
       console.log("req.query",req.query)
 
       const result = await RideModel.search({ 
@@ -21,6 +21,7 @@ const ridesController = {
         travelDate, 
         userLat: userLat ? parseFloat(userLat) : undefined,
         userLng: userLng ? parseFloat(userLng) : undefined,
+        rideType,
         page, 
         limit 
       });
@@ -75,6 +76,7 @@ const ridesController = {
         driverName,
         phoneNumber,
         vehicleNumber,
+        vehicleName,
         fromLocation,
         toLocation,
         travelDate,
@@ -86,6 +88,7 @@ const ridesController = {
         priceMode,
         maxLuggage,
         rideType,
+        allowReverse,
       } = req.body;
 
       // Resolve user: use authenticated user or auto-register
@@ -111,8 +114,12 @@ const ridesController = {
         }
       }
 
-      // Find or create vehicle record
-      const vehicle = await VehicleModel.findOrCreate(userId, vehicleNumber);
+      // Find or create vehicle record if vehicleNumber is provided
+      let vehicleId = null;
+      if (vehicleNumber && vehicleNumber.trim()) {
+        const vehicle = await VehicleModel.findOrCreate(userId, vehicleNumber);
+        vehicleId = vehicle.id;
+      }
 
       // Geocode locations (fails gracefully to null if API error or missing API key)
       const fromCoords = await getCoordinates(fromLocation.trim());
@@ -120,10 +127,11 @@ const ridesController = {
 
       const ride = await RideModel.create({
         userId,
-        vehicleId: vehicle.id,
+        vehicleId,
         driverName: driverName || (req.user ? req.user.name : 'Driver'),
         phoneNumber: phoneNumber || (req.user ? req.user.mobile : ''),
-        vehicleNumber: vehicleNumber.trim().toUpperCase(),
+        vehicleNumber: vehicleNumber && vehicleNumber.trim() ? vehicleNumber.trim().toUpperCase() : null,
+        vehicleName: vehicleName && vehicleName.trim() ? vehicleName.trim() : null,
         fromLocation: fromLocation.trim(),
         fromLat: fromCoords ? fromCoords.lat : null,
         fromLng: fromCoords ? fromCoords.lng : null,
@@ -139,6 +147,7 @@ const ridesController = {
         priceMode: priceMode || 'fixed',
         maxLuggage: maxLuggage || 'medium',
         rideType: rideType || 'sharing',
+        allowReverse: allowReverse !== undefined ? (allowReverse === 'true' || allowReverse === true) : true,
       });
 
       res.status(201).json({
@@ -215,6 +224,23 @@ const ridesController = {
       }
 
       res.json({ success: true, message: 'Ride deleted successfully' });
+    } catch (error) {
+      next(error);
+    }
+  },
+
+  /**
+   * POST /api/rides/:id/call
+   * Increment call_count counter for a ride.
+   */
+  incrementCallCount: async (req, res, next) => {
+    try {
+      const { id } = req.params;
+      const success = await RideModel.incrementCallCount(id);
+      if (!success) {
+        return res.status(404).json({ success: false, message: 'Ride not found.' });
+      }
+      res.json({ success: true, message: 'Call count incremented successfully' });
     } catch (error) {
       next(error);
     }
