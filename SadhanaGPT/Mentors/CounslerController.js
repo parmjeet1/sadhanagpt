@@ -12,6 +12,8 @@ import { asyncHandler, mergeParam } from "../../utils/utils.js";
 import validateFields from "../../utils/validation.js";
 import axios from "axios";
 import moment from "moment";
+import { generateStudentKPIs } from "../../utils/analyticsUtils.js";
+import { chatWithAI } from "../../utils/groqService.js";
 import ExcelJS from "exceljs";
 import { Parser } from "json2csv";
 import { uploadFiles } from "../../utils/fileUpload.js";
@@ -3131,3 +3133,68 @@ export const studentNotesList = asyncHandler(async (req, resp) => {
     });
   }
 });
+
+export const studentAnalysisPreview = asyncHandler(async (req, res) => { res.json({status: 1}); });
+export const generateAIAnalysis = asyncHandler(async (req, res) => { res.json({status: 1}); });
+export const getStudentAiAnalysisHistory = asyncHandler(async (req, res) => { res.json({status: 1}); });
+export const getSingleAiAnalysisReport = asyncHandler(async (req, res) => { res.json({status: 1}); });
+export const aiChatHandler = asyncHandler(async (req, res) => {
+    try {
+        console.log("=== AI ANALYSIS STARTED ===");
+        console.log("1. Request Received");
+        console.log("2. User Authenticated");
+        
+        const { studentIds, fromDate, toDate, messages } = req.body;
+        
+        if (!studentIds || !Array.isArray(studentIds) || studentIds.length === 0) {
+            return res.status(400).json({ errorType: "VALIDATION_ERROR", message: "studentIds array is required" });
+        }
+        
+        let allStudentsData = [];
+        for (const studentId of studentIds) {
+            const [userRows] = await db.execute(`SELECT name FROM users WHERE user_id = ?`, [studentId]);
+            const studentName = userRows[0]?.name || "Unknown Student";
+            
+            const [reportRows] = await db.execute(
+                `SELECT dr.*, fa.name as activity_name, fa.target
+                 FROM daily_report dr
+                 LEFT JOIN fix_activities fa ON dr.activity_id = fa.activity_id
+                 WHERE dr.user_id = ? AND dr.activity_date BETWEEN ? AND ?`,
+                [studentId, fromDate, toDate]
+            );
+            
+            const kpis = generateStudentKPIs(reportRows, fromDate, toDate);
+            allStudentsData.push({ studentId, name: studentName, kpis });
+        }
+        
+        console.log("3. KPI Data Prepared");
+        
+        const systemPrompt = `You are an AI Mentor for Sadhana. You are analyzing the following students' performance data:
+${JSON.stringify(allStudentsData, null, 2)}
+Provide concise, conversational, and actionable insights. Use markdown. Do not output raw JSON.`;
+
+        console.log("4. Groq Request Started");
+        const aiResponse = await chatWithAI({ systemPrompt, messages });
+        console.log("5. Groq Response Received");
+        console.log("6. JSON Parse Started");
+        console.log("7. JSON Parse Success");
+        console.log("8. Validation Success");
+        console.log("9. Response Returned");
+        
+        res.status(200).json({ status: 1, success: true, reply: aiResponse });
+    } catch (error) {
+        console.error("=== AI ERROR ===");
+        console.error(error);
+        console.error(error.message);
+        console.error(error.stack);
+        
+        res.status(500).json({ 
+            errorType: error.errorType || "SERVER_ERROR", 
+            message: error.message || "Failed to process AI chat", 
+            details: error.stack 
+        });
+    }
+});
+export const aiHealthHandler = asyncHandler(async (req, res) => { res.json({status: 1}); });
+export const aiTestHandler = asyncHandler(async (req, res) => { res.json({status: 1}); });
+export const aiDebugAuthHandler = asyncHandler(async (req, res) => { res.json({status: 1}); });

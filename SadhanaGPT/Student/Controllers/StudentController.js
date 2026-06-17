@@ -825,8 +825,8 @@ export const addSadhna = asyncHandler(async (req, resp) => {
     `SELECT fa.activity_type, dr.activity_id,dr.note,dr.activity_date,dr.count from daily_report dr
     JOIN fix_activities fa ON  fa.activity_id=dr.activity_id 
     where
-         dr.activity_id=? and DATE(dr.activity_date)=? `,
-    [activity_id, final_activity_date],
+         dr.activity_id=? and DATE(dr.activity_date)=? AND dr.user_id=? `,
+    [activity_id, final_activity_date, user_id],
   );
 
   // --- NEW LOGIC: DELETE IF COUNT IS 0 ---
@@ -850,8 +850,7 @@ export const addSadhna = asyncHandler(async (req, resp) => {
   }
   // ---------------------------------------
 
-  const isTime = check_today_sadhana?.activity_type === 'time';
-  const storedCount = isTime ? minutesToTime(Number(count)) : count;
+  const storedCount = count; // Always store integer for robust parsing/averaging
   
   if (check_today_sadhana) {
     
@@ -1297,7 +1296,7 @@ export const oldonBoarding = asyncHandler(async (req, resp) => {
   }
 
   const isExist = await queryDB(
-    `SELECT profile, access_token,user_id,email,mobile,temple_id,user_type, (SELECT counsller_id FROM user_counsellors WHERE user_id = users.user_id) AS counsller_id FROM users WHERE google_id = ?`,
+    `SELECT profile, access_token,user_id,email,mobile,temple_id,user_type, (SELECT counsller_id FROM user_counsellors WHERE user_id = users.user_id LIMIT 1) AS counsller_id FROM users WHERE google_id = ?`,
     [google_id],
   );
   const access_token = crypto.randomBytes(12).toString("hex");
@@ -1404,8 +1403,8 @@ export const onBoarding = asyncHandler(async (req, resp) => {
   }
 
   const isExist = await queryDB(
-    `SELECT profile, access_token,user_id,email,mobile,temple_id,user_type, (SELECT counsller_id FROM user_counsellors WHERE user_id = users.user_id) AS counsller_id FROM users WHERE google_id = ?`,
-    [google_id],
+    `SELECT profile, access_token,user_id,email,mobile,temple_id,user_type, (SELECT counsller_id FROM user_counsellors WHERE user_id = users.user_id LIMIT 1) AS counsller_id FROM users WHERE email = ?`,
+    [email],
   );
   const access_token = crypto.randomBytes(12).toString("hex");
 
@@ -1644,7 +1643,7 @@ export const olduserProfile = asyncHandler(async (req, resp) => {
   if (!isValid) return resp.json({ status: 0, code: 422, message: errors });
      const user= await queryDB(
         `SELECT user_id, name, email,mobile,temple_id,user_type,
-         (SELECT counsller_id FROM user_counsellors WHERE user_id = users.user_id)
+         (SELECT counsller_id FROM user_counsellors WHERE user_id = users.user_id LIMIT 1)
           AS counsller_id FROM 
           users WHERE user_id = ?`,
         [user_id],
@@ -1718,6 +1717,8 @@ export const olduserProfile = asyncHandler(async (req, resp) => {
     SELECT 
       uc.counsller_id AS mentor_id,
       usr.name,
+      usr.email,
+      usr.birthday AS dob,
       usr.auto_report_status,
       usr.report_frequency_days,
      
@@ -1754,9 +1755,16 @@ export const olduserProfile = asyncHandler(async (req, resp) => {
 
       mentors: mentors.map((m) => ({
         mentor_id: m.mentor_id,
-        name: m.name,
+        mentor_name: m.name,
+        mentor_email: m.email,
+        mentor_dob: m.dob,
         temple: m.temple || "",
-        avatar: m.avatar,
+        mentor_profile_image: m.avatar,
+        // Also keep old keys just in case other parts of the app use them
+        name: m.name,
+        email: m.email,
+        dob: m.dob,
+        avatar: m.avatar
       })),
 
       rewards: rewards || [],
@@ -1951,6 +1959,11 @@ const today_moment = moment();
         end_formatted_date = moment(end_date).format("YYYY-MM-DD");
         break;
 
+      case "2days":
+        end_formatted_date = today_moment.format("YYYY-MM-DD");
+        start_formatted_date = today_moment.clone().subtract(1, "days").format("YYYY-MM-DD");
+        break;
+
       case "7days":
       default:
         end_formatted_date = today_moment.format("YYYY-MM-DD");
@@ -2029,7 +2042,7 @@ const mergedData = dates.map(date => {
       SELECT
       
 CASE 
-    WHEN fa.activity_type IN ('numb','min')
+    WHEN fa.activity_type != 'time'
         THEN ROUND(AVG(CAST(dr.count AS DECIMAL(10,2))),2)
 
     WHEN fa.activity_type = 'time'
@@ -2057,11 +2070,12 @@ FROM fix_activities fa
 
   LEFT JOIN daily_report dr 
     ON dr.activity_id = fa.activity_id  AND dr.user_id = ?
+    AND DATE(dr.activity_date) BETWEEN ? AND ?
   JOIN users u ON u.user_id = ?
     WHERE
          fa.user_id = ? GROUP BY fa.activity_id
       `,
-      [user_id,user_id,user_id]
+      [user_id, start_formatted_date, end_formatted_date, user_id, user_id]
     );
 
     const attendance_days=student_data[0].attendance_count 
@@ -2115,6 +2129,14 @@ export const StudentActivitiesAnalytics = asyncHandler(async (req, res) => {
     case "custom":
       start_formatted_date = moment(start_date).format("YYYY-MM-DD");
       end_formatted_date = moment(end_date).format("YYYY-MM-DD");
+      break;
+
+    case "2days":
+      end_formatted_date = today_moment.format("YYYY-MM-DD");
+      start_formatted_date = today_moment
+        .clone()
+        .subtract(1, "days")
+        .format("YYYY-MM-DD");
       break;
 
     case "7days":
@@ -2178,7 +2200,7 @@ export const StudentActivitiesAnalytics = asyncHandler(async (req, res) => {
     `
     SELECT
       CASE 
-        WHEN fa.activity_type IN ('numb','min')
+        WHEN fa.activity_type != 'time'
           THEN ROUND(AVG(CAST(dr.count AS DECIMAL(10,2))),2)
 
         WHEN fa.activity_type = 'time'
@@ -2199,6 +2221,7 @@ export const StudentActivitiesAnalytics = asyncHandler(async (req, res) => {
     LEFT JOIN daily_report dr 
       ON dr.activity_id = fa.activity_id 
       AND dr.user_id = ?
+      AND DATE(dr.activity_date) BETWEEN ? AND ?
     WHERE fa.user_id = ?
     GROUP BY
     fa.activity_id,
@@ -2207,7 +2230,7 @@ export const StudentActivitiesAnalytics = asyncHandler(async (req, res) => {
       fa.unit,
       fa.activity_type
     `,
-    [user_id, user_id]
+    [user_id, start_formatted_date, end_formatted_date, user_id]
   );
 
   /* ---------------------------
@@ -2229,10 +2252,66 @@ export const StudentActivitiesAnalytics = asyncHandler(async (req, res) => {
     if (last > prev) trend = "+";
     else if (last < prev) trend = "-";
 
+    /* -------- Calculate Accurate Average -------- */
+    const validValues = daily_data.filter(d => {
+       const v = d.count;
+       if (typeof v === 'string' && v.includes(':')) return v !== '00:00:00' && v !== '00:00';
+       return Number(v) > 0;
+    });
+
+    let avgValue = 0;
+    if (validValues.length > 0) {
+      if (activity.activity_type === "time") {
+         let sumSin = 0;
+         let sumCos = 0;
+         
+         validValues.forEach(d => {
+            let mins = 0;
+            const v = d.count;
+            if (typeof v === 'number' || (typeof v === 'string' && !isNaN(v))) {
+               mins = Number(v);
+            } else if (typeof v === 'string') {
+               let timeStr = v.toUpperCase().trim();
+               const isPM = timeStr.includes('PM');
+               const isAM = timeStr.includes('AM');
+               timeStr = timeStr.replace('AM', '').replace('PM', '').trim();
+               const parts = timeStr.split(':').map(Number);
+               let h = parts[0] || 0;
+               let m = parts[1] || 0;
+               if (isPM && h < 12) h += 12;
+               if (isAM && h === 12) h = 0;
+               mins = h * 60 + m;
+            }
+            
+            const angle = (mins / 1440) * 2 * Math.PI;
+            sumSin += Math.sin(angle);
+            sumCos += Math.cos(angle);
+         });
+         
+         let avgAngle = Math.atan2(sumSin / validValues.length, sumCos / validValues.length);
+         if (avgAngle < 0) avgAngle += 2 * Math.PI;
+         
+         const avgMins = Math.round((avgAngle / (2 * Math.PI)) * 1440) % 1440;
+         let h = Math.floor(avgMins / 60);
+         const m = avgMins % 60;
+         const period = h >= 12 ? 'PM' : 'AM';
+         h = h % 12;
+         h = h ? h : 12; // convert 0 to 12
+         
+         avgValue = `${h}:${String(m).padStart(2, '0')} ${period}`;
+      } else {
+         const total = validValues.reduce((sum, d) => sum + Number(d.count), 0);
+         avgValue = total / daily_data.length;
+         if (avgValue % 1 !== 0) avgValue = parseFloat(avgValue.toFixed(2));
+      }
+    }
+    activity.average_value = avgValue;
+
     /* -------- Label Logic -------- */
     let label = "";
     if (activity.activity_type === "time") label = "Avg. Time";
     else if (activity.unit === "min") label = "Avg. Minutes";
+    else if (activity.unit === "hours") label = "Avg. Hours";
     else label = "Avg. Count";
 
     return {
@@ -2592,4 +2671,52 @@ export const submitAppFeedback = asyncHandler(async (req, resp) => {
       message: ["Internal server error"]
     });
   }
+});
+
+export const uploadProfileImage = asyncHandler(async (req, resp) => {
+  const { user_id } = mergeParam(req);
+
+  if (!user_id) {
+    return resp.json({ status: 0, code: 422, message: ["user_id is required"] });
+  }
+
+  if (!req.files || !req.files.profile || !req.files.profile.length) {
+    return resp.json({ status: 0, code: 422, message: ["No profile image uploaded"] });
+  }
+
+  const fileUrl = req.files.profile[0].file_url;
+
+  await db.execute(
+    `UPDATE users SET profile = ? WHERE user_id = ?`,
+    [fileUrl, user_id]
+  );
+
+  return resp.json({
+    status: 1,
+    code: 200,
+    message: ["Profile image uploaded successfully"],
+    data: {
+      profile_image: fileUrl
+    }
+  });
+});
+
+export const removeProfileImage = asyncHandler(async (req, resp) => {
+  const { user_id } = mergeParam(req);
+
+  if (!user_id) {
+    return resp.json({ status: 0, code: 422, message: ["user_id is required"] });
+  }
+
+  await db.execute(
+    `UPDATE users SET profile = NULL WHERE user_id = ?`,
+    [user_id]
+  );
+
+  return resp.json({
+    status: 1,
+    code: 200,
+    message: ["Profile image removed successfully"],
+    data: null
+  });
 });

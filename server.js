@@ -41,16 +41,31 @@ process.on("warning", (warning) => {
       const __dirname = path.dirname(__filename);
 
       const corsOptions = {
-        origin: [
-          "https://sadhanagpt.com",
-          "http://sadhanagpt.com",
-          "http://localhost:5173",
-          "https://www.sadhanagpt.com",
-          
-          
-        ],
-        // origin : "*",
-        methods: 'GET, POST, PUT, DELETE',
+        origin: (origin, callback) => {
+          // Allow requests with no origin (e.g. mobile apps, curl, Postman)
+          if (!origin) return callback(null, true);
+
+          const allowedOrigins = [
+            "https://sadhanagpt.com",
+            "http://sadhanagpt.com",
+            "https://www.sadhanagpt.com",
+            "http://localhost:5173",
+            "http://localhost:5174",
+            "http://localhost:3000",
+          ];
+
+          // Allow any origin on a local network: 192.168.x.x, 10.x.x.x, 172.16-31.x.x
+          const isLocalNetwork = /^https?:\/\/(192\.168\.|10\.|172\.(1[6-9]|2[0-9]|3[01])\.)/.test(origin);
+
+          if (allowedOrigins.includes(origin) || isLocalNetwork) {
+            callback(null, true);
+          } else {
+            console.warn(`[CORS] Blocked origin: ${origin}`);
+            callback(new Error(`CORS policy: origin '${origin}' not allowed`));
+          }
+        },
+        methods: 'GET, POST, PUT, DELETE, OPTIONS',
+        allowedHeaders: 'Content-Type, Authorization, access_token, accesstoken',
         credentials: true
       };
 
@@ -85,16 +100,24 @@ process.on("warning", (warning) => {
 
         app.use("/auth", authRoutes);
 
+      // ── Health-check routes ──────────────────────────────────────────────
+      // Confirms backend is reachable (fixes "Cannot GET /" on mobile)
+      app.get('/', (req, res) => {
+        res.send('Backend is running');
+      });
 
+      // Quick JSON test endpoint
+      app.get('/test', (req, res) => {
+        res.json({ success: true, message: 'Backend test OK', timestamp: new Date().toISOString() });
+      });
+
+      app.get('/ping', (req, res) => {
+        console.log('[ping] pong');
+        return res.json({ status: 1, code: 200, message: 'latest updated v1' });
+      });
+      // ────────────────────────────────────────────────────────────────────
 
       app.use('/api', Routes);
-     app.get('/ping', (req, res) => {
-        console.log("pong");
-          
-        return res.json({ status: 1, code: 200, message: "latest updated v1" })
-        //   res.send('Server is alive');
-
-      });
 
 
       // start react git
@@ -104,11 +127,48 @@ process.on("warning", (warning) => {
         //   res.sendFile(path.join(__dirname, 'dist', 'index.html'));
         // });
       /// end react 
+      
+      // Serve uploads statically for local development
+      app.use('/uploads', express.static(path.join(process.cwd(), 'uploads')));
        
       const server = http.createServer(app);
-      server.listen(PORT,'0.0.0.0', () => {
-        console.log(`Server is running on http://localhost:${PORT}`);
-      });
+      server.listen(PORT, '0.0.0.0', () => {
+        // ── Startup info ────────────────────────────────────────────────────
+        import('os').then((osModule) => {
+          const os = osModule.default;
+          const nets = os.networkInterfaces();
+          const localIPs = [];
+          for (const iface of Object.values(nets)) {
+            for (const net of iface) {
+              if (net.family === 'IPv4' && !net.internal) localIPs.push(net.address);
+            }
+          }
+          console.log(`\n✅ Server is running on port ${PORT}`);
+          console.log(`   Local:   http://localhost:${PORT}`);
+          localIPs.forEach(ip => console.log(`   Network: http://${ip}:${PORT}  \u2190 use this on mobile`));
+
+          // ── Print all registered routes ──────────────────────────────────
+          console.log('\n\ud83d\udccb Registered routes:');
+          app._router.stack.forEach((layer) => {
+            if (layer.route) {
+              const methods = Object.keys(layer.route.methods).map(m => m.toUpperCase()).join(',');
+              console.log(`   ${methods.padEnd(8)} ${layer.route.path}`);
+            } else if (layer.name === 'router' && layer.handle.stack) {
+              const prefix = layer.regexp.source
+                .replace('^\\\/','/')
+                .replace('\\/?(?=\\\/|$)','');
+              layer.handle.stack.forEach((r) => {
+                if (r.route) {
+                  const methods = Object.keys(r.route.methods).map(m => m.toUpperCase()).join(',');
+                  console.log(`   ${methods.padEnd(8)} ${prefix}${r.route.path}`);
+                }
+              });
+            }
+          });
+          console.log('');
+          // ────────────────────────────────────────────────────────────────
+        }); // end import('os').then()
+      }); // end server.listen
 
 
 

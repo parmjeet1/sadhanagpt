@@ -363,12 +363,12 @@ const getUserPushSubscription = async (user_id) => {
 
 export const freqSadhnaCronjob = () => {
 
-  cron.schedule('0 20 * * *', async () => {
+  cron.schedule('30 20 * * *', async () => {
     await sendDailyGlobalReminder();
   });
 
   // Runs every day at 9 AM
-  cron.schedule('0 20 * * *', async () => {
+  cron.schedule('0 9 * * *', async () => {
     await checkAndSendReminders();
   });
 
