@@ -1403,8 +1403,9 @@ export const onBoarding = asyncHandler(async (req, resp) => {
   }
 
   const isExist = await queryDB(
-    `SELECT profile, access_token,user_id,email,mobile,temple_id,user_type, (SELECT counsller_id FROM user_counsellors WHERE user_id = users.user_id LIMIT 1) AS counsller_id FROM users WHERE email = ?`,
-    [email],
+    `SELECT profile, access_token,user_id,email,mobile,temple_id,user_type, 
+    (SELECT counsller_id FROM user_counsellors WHERE user_id = users.user_id and counsllor_type='primary' ) AS counsller_id FROM users WHERE google_id = ?`,
+    [google_id],
   );
   const access_token = crypto.randomBytes(12).toString("hex");
 

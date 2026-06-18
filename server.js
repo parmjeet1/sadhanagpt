@@ -21,7 +21,14 @@
       import { processInactivityReminders,dispatchWeeklyCounsellorReports } from './SadhanaGPT/cronjobs/Email-notificatiion.js';
       import { sendSadhanaWhatsappReminders } from './SadhanaGPT/cronjobs/WhatsAppMessage.js';
 import { freqSadhnaCronjob, sendSadhanaPushReminders } from './SadhanaGPT/cronjobs/WebPushNotification.js';
-     process.on("unhandledRejection", (reason) => {
+import TripaRoutes from './tripa-app/src/routes/Routes.js';
+import crypto from 'crypto';
+if (typeof globalThis.crypto === 'undefined') {
+  globalThis.crypto = crypto;
+}
+
+
+process.on("unhandledRejection", (reason) => {
   logger.error(`Unhandled Rejection: ${reason}`);
 });
 
@@ -41,31 +48,17 @@ process.on("warning", (warning) => {
       const __dirname = path.dirname(__filename);
 
       const corsOptions = {
-        origin: (origin, callback) => {
-          // Allow requests with no origin (e.g. mobile apps, curl, Postman)
-          if (!origin) return callback(null, true);
-
-          const allowedOrigins = [
-            "https://sadhanagpt.com",
-            "http://sadhanagpt.com",
-            "https://www.sadhanagpt.com",
-            "http://localhost:5173",
-            "http://localhost:5174",
-            "http://localhost:3000",
-          ];
-
-          // Allow any origin on a local network: 192.168.x.x, 10.x.x.x, 172.16-31.x.x
-          const isLocalNetwork = /^https?:\/\/(192\.168\.|10\.|172\.(1[6-9]|2[0-9]|3[01])\.)/.test(origin);
-
-          if (allowedOrigins.includes(origin) || isLocalNetwork) {
-            callback(null, true);
-          } else {
-            console.warn(`[CORS] Blocked origin: ${origin}`);
-            callback(new Error(`CORS policy: origin '${origin}' not allowed`));
-          }
-        },
-        methods: 'GET, POST, PUT, DELETE, OPTIONS',
-        allowedHeaders: 'Content-Type, Authorization, access_token, accesstoken',
+        // origin: [
+        //   "https://sadhanagpt.com",
+        //   "http://sadhanagpt.com",
+        //   "http://localhost:5173",
+        //   "https://www.sadhanagpt.com",
+        //   "http://localhost:8081"
+          
+          
+        // ],
+        origin : "*",
+        methods: 'GET, POST, PUT, DELETE',
         credentials: true
       };
 
@@ -99,6 +92,7 @@ process.on("warning", (warning) => {
       app.use(passport.session());
 
         app.use("/auth", authRoutes);
+        
 
       // ── Health-check routes ──────────────────────────────────────────────
       // Confirms backend is reachable (fixes "Cannot GET /" on mobile)
@@ -106,18 +100,16 @@ process.on("warning", (warning) => {
         res.send('Backend is running');
       });
 
-      // Quick JSON test endpoint
-      app.get('/test', (req, res) => {
-        res.json({ success: true, message: 'Backend test OK', timestamp: new Date().toISOString() });
-      });
+    app.use('/api/trip-api', TripaRoutes);
 
-      app.get('/ping', (req, res) => {
-        console.log('[ping] pong');
-        return res.json({ status: 1, code: 200, message: 'latest updated v1' });
-      });
-      // ────────────────────────────────────────────────────────────────────
+    app.use('/api', Routes);
+     app.get('/ping', (req, res) => {
+        console.log("pong");
+          
+        return res.json({ status: 1, code: 200, message: "latest updated v1" })
+        //   res.send('Server is alive');
 
-      app.use('/api', Routes);
+      });
 
 
       // start react git
@@ -172,21 +164,25 @@ process.on("warning", (warning) => {
 
 
 
-      // for 12 pm every day '0 12 * * *
-      // cron.schedule('*/1  * * * *', async () => {
+      
+      // cron.schedule('0 0 * * 7', async () => {
 
-      // // dispatchWeeklyCounsellorReports();  
-      // // processInactivityReminders();
-      //   // processRewardRules();
+      //   await dispatchWeeklyCounsellorReports();
+
+
+
       // });
-      //  7th day of every month at 12:00 PM
-      cron.schedule('0 0 * * 7', async () => {
+      cron.schedule(
+  '0 0 * * 7',
+  async () => {
+    console.log('Running dispatchWeeklyCounsellorReports:', new Date());
 
-        await dispatchWeeklyCounsellorReports();
-
-
-
-      });
+    await dispatchWeeklyCounsellorReports();
+  },
+  {
+    timezone: 'Asia/Kolkata',
+  }
+);
       // Schedule: Every Saturday (6) at 10:00 AM
       // 
      

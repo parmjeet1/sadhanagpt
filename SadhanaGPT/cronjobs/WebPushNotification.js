@@ -359,9 +359,18 @@ const getUserPushSubscription = async (user_id) => {
             console.error("Error in global reminder cron:", error);
         }
     };
-  
+  export const freqSadhnaCronjob = () => {
+  const timezone = 'Asia/Kolkata';
 
-export const freqSadhnaCronjob = () => {
+  // Daily at 8:00 PM IST
+  cron.schedule(
+    '0 20 * * *',
+    async () => {
+      // console.log('Running sendDailyGlobalReminder:', new Date());
+      await sendDailyGlobalReminder();
+    },
+    { timezone }
+  );
 
   cron.schedule('30 20 * * *', async () => {
     await sendDailyGlobalReminder();
@@ -371,12 +380,44 @@ export const freqSadhnaCronjob = () => {
   cron.schedule('0 9 * * *', async () => {
     await checkAndSendReminders();
   });
+    // Daily at 9:15 AM IST
+  cron.schedule(
+    '15 9 * * *',
+    async () => {
+      // console.log('Running notifyMentorsOfIrregularMentees:', new Date());
+      await notifyMentorsOfIrregularMentees();
+    },
+    { timezone }
+  );
+  // Every Saturday at 10:00 AM IST
+  cron.schedule(
+    '0 10 * * 6',
+    async () => {
+      // console.log('Running sendSadhanaPushReminders:', new Date());
+      await sendSadhanaPushReminders();
+    },
+    { timezone }
+  );
 
-  cron.schedule('15 9 * * *', async () => {
-    await notifyMentorsOfIrregularMentees();
-  });
-   cron.schedule('0 10 * * 6', async () => {
-    await sendSadhanaPushReminders();
-  });
-
+  console.log(`Sadhana cron jobs initialized (${timezone})`);
 };
+
+// export const freqSadhnaCronjob = () => {
+
+//   cron.schedule('0 20 * * *', async () => {
+//     await sendDailyGlobalReminder();
+//   });
+
+//   // Runs every day at 9 AM
+//   cron.schedule('0 20 * * *', async () => {
+//     await checkAndSendReminders();
+//   });
+
+//   cron.schedule('15 9 * * *', async () => {
+//     await notifyMentorsOfIrregularMentees();
+//   });
+//    cron.schedule('0 10 * * 6', async () => {
+//     await sendSadhanaPushReminders();
+//   });
+
+// };
