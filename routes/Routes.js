@@ -10,6 +10,7 @@ import { handleFileUpload } from "../utils/fileUpload.js";
 import { sendBulknEmails } from "../SadhanaGPT/cronjobs/Email-notificatiion.js";
 import { irregularMenteesList, toggleMenteeNotification } from "../SadhanaGPT/Mentors/NotificationController.js";
 import { assignActivitiesToStudents, getMentorSelectableActivities } from "../SadhanaGPT/Controllers/AssingActvtiesController.js";
+import { addMarkingRule } from "../SadhanaGPT/Controllers/MarkingController.js";
 
 const router = Router();
 
@@ -157,9 +158,11 @@ const LoggedinRoute = [
     ////
     { method: 'get', path: '/selectable-activities-list', handler: getMentorSelectableActivities, role: "counsellor" },
 
-    { method: 'post', path: '/assign-activties-from-mentor', handler: assignActivitiesToStudents, role: "counsellor" },
+    { method: 'post', path: '/assign-activties-from-mentor', handler: assignActivitiesToStudents , role: "counsellor" },
+//
+    { method: 'post', path: '/add-marking-rule', handler: addMarkingRule , role: "counsellor" },
 
-    //
+        
 
 
     //student detail page.      
