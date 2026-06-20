@@ -1268,112 +1268,7 @@ console.log(mergeParam(req));
   });
 });
 
-export const oldonBoarding = asyncHandler(async (req, resp) => {
-  // here consler email will be ask form studnet ,
-  const { name,email, mobile, temple_id,user_type, counsellor_id='U000000002', added_from = "",device_name = "",
-    google_id,
-    profile,
-    birthday
-  } = req.body;
 
-  const { isValid, errors } = validateFields(req.body, {
-    email: ["required"],
-    name: ["required"],
-    mobile: ["required"],
-    temple_id: user_type === "counsellor" ? ["required"] : [],
-    user_type: ["required"],
-    google_id: ["required"],
-    birthday: ["required"],
-  });
-  let final_temple_id, finally_counsller_id;
-
-  if (!isValid) {
-    return resp.json({
-      status: 0,
-      code: 422,
-      message: errors,
-    });
-  }
-
-  const isExist = await queryDB(
-    `SELECT profile, access_token,user_id,email,mobile,temple_id,user_type, (SELECT counsller_id FROM user_counsellors WHERE user_id = users.user_id LIMIT 1) AS counsller_id FROM users WHERE google_id = ?`,
-    [google_id],
-  );
-  const access_token = crypto.randomBytes(12).toString("hex");
-
-  if (isExist) {
-    await updateRecord(
-      "users",
-      { access_token, profile },
-      ["google_id"],
-      [google_id],
-    );
-
-    return resp.json({
-      status: 1,
-      code: 200,
-      data: {
-        user_id:isExist.user_id,
-        email: isExist.email,
-        name: isExist.name,
-        mobile: isExist.mobile,
-        access_token: isExist.access_token,
-        temple_id: isExist.temple_id,
-        user_type: isExist.user_type,
-        counsller_id: isExist.counsller_id,
-        profile:isExist.profile ? isExist.profile : process.env.IMAGE_UPLOAD_PATH + "default_profile.png",
-      
-      },
-      message: ["User registred successfully"],
-    });
-  }
-  switch (user_type) {
-    case "student":
-     
-      if (!counsellor_id) {
-        return resp.json({
-          status: 0,
-          code: 422,
-          message: ["Counsellor  required for student"],
-        });
-      }
-      const counsellor = await queryDB(
-        `SELECT 
-        temple_id FROM users WHERE user_id = ?  limit 1`,
-        [counsellor_id],
-      );
-      final_temple_id = counsellor.temple_id;
-      finally_counsller_id = counsellor_id;
-
-      break;
-    case "counsellor":
-      finally_counsller_id = null;
-      final_temple_id = temple_id;
-      break;
-    default:
-      return resp.json({
-        status: 0,
-        code: 422,
-        message: ["Invalid user type"],
-      });
-  }
-
-  const result = await registerUser(
-    email,
-    name,
-    mobile,
-    final_temple_id,
-    user_type,
-    finally_counsller_id,
-    added_from,
-    device_name,
-    access_token,
-    google_id,
-    profile,
-    birthday
-  );
-  return resp.json(result);
-});
 export const onBoarding = asyncHandler(async (req, resp) => {
   // here consler email will be ask form studnet ,
   const { name,email, mobile, temple_id,user_type, counsellor_id='U000000002', added_from = "",device_name = "",
@@ -1404,9 +1299,8 @@ export const onBoarding = asyncHandler(async (req, resp) => {
 
   const isExist = await queryDB(
     `SELECT profile, access_token,user_id,email,mobile,temple_id,user_type, 
-    (SELECT counsller_id FROM user_counsellors WHERE user_id = users.user_id and counsllor_type='primary' ) AS counsller_id FROM users WHERE google_id = ?`,
-    [google_id],
-  );
+    (SELECT counsller_id FROM user_counsellors WHERE user_id = users.user_id and counsllor_type='primary' ) AS counsller_id FROM users WHERE 
+    email = ?`,[email]);
   const access_token = crypto.randomBytes(12).toString("hex");
 
   if (isExist) {
