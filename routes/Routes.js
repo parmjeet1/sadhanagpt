@@ -9,6 +9,7 @@ import { addCenter, addContent, addLable, addNote, addRewardRules, aiReport, ass
 import { handleFileUpload } from "../utils/fileUpload.js";
 import { sendBulknEmails } from "../SadhanaGPT/cronjobs/Email-notificatiion.js";
 import { irregularMenteesList, toggleMenteeNotification } from "../SadhanaGPT/Mentors/NotificationController.js";
+import { assignActivitiesToStudents, getMentorSelectableActivities } from "../SadhanaGPT/Controllers/AssingActvtiesController.js";
 
 const router = Router();
 
@@ -144,6 +145,10 @@ const authzAndAuthRoutes = [
     ,
     { method: 'post', path: '/toggle-mentee-notification', handler: toggleMenteeNotification, role: "counsellor" },
     { method: 'get', path: '/irregular-mentees', handler: irregularMenteesList , role: "counsellor" },
+////
+    { method: 'get', path: '/selectable-activties-list', handler: getMentorSelectableActivities , role: "counsellor" },
+
+    { method: 'post', path: '/assign-activties-from-mentor', handler: assignActivitiesToStudents , role: "counsellor" },
 
 //
         
