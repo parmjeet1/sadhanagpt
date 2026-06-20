@@ -153,11 +153,11 @@ const LoggedinRoute = [
     { method: 'get', path: '/counsellor-content-list', handler: contentListCounsellor, role: "counsellor" },
     ,
     { method: 'post', path: '/toggle-mentee-notification', handler: toggleMenteeNotification, role: "counsellor" },
-    { method: 'get', path: '/irregular-mentees', handler: irregularMenteesList , role: "counsellor" },
-////
-    { method: 'get', path: '/selectable-activties-list', handler: getMentorSelectableActivities , role: "counsellor" },
+    { method: 'get', path: '/irregular-mentees', handler: irregularMenteesList, role: "counsellor" },
+    ////
+    { method: 'get', path: '/selectable-activities-list', handler: getMentorSelectableActivities, role: "counsellor" },
 
-    { method: 'post', path: '/assign-activties-from-mentor', handler: assignActivitiesToStudents , role: "counsellor" },
+    { method: 'post', path: '/assign-activties-from-mentor', handler: assignActivitiesToStudents, role: "counsellor" },
 
     //
 
