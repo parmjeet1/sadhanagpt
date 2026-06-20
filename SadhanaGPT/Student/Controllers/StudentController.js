@@ -743,6 +743,8 @@ function minutesToTime(mins) {
   return `${hour12}:${String(minsPart).padStart(2, '0')} ${period}`;
 }
 
+
+//with marking no testing
 export const oldaddSadhna = asyncHandler(async (req, resp) => {
 
   const { activity_id, count, activity_date, note, user_id, unit } = req.body;
@@ -750,61 +752,126 @@ export const oldaddSadhna = asyncHandler(async (req, resp) => {
   const { isValid, errors } = validateFields(req.body, {
     activity_id: ["required"],
     activity_date: ["required"],
-    // count: ["required"],
     user_id: ["required"],
-    // unit: ["required"],
   });
-  console.log("count",count);
   
   if (!isValid) return resp.json({ status: 0, code: 422, message: errors });
-  const today = moment().format("YYYY-MM-DD");
+
   const final_activity_date = moment(activity_date).format("YYYY-MM-DD");
-  const check_today_sadhana = await queryDB(
-    `SELECT fa.activity_type, dr.activity_id,dr.note,dr.activity_date,dr.count from daily_report dr
-    JOIN fix_activities fa ON  fa.activity_id=dr.activity_id 
-    where
-         dr.activity_id=? and DATE(dr.activity_date)=? `,
-    [activity_id, final_activity_date],
+
+  // 1. Fetch activity details separately (fixes bug where isTime was undefined on first insert)
+  const [[activityInfo]] = await db.execute(
+    `SELECT activity_type, master_activity_id FROM fix_activities WHERE activity_id = ? LIMIT 1`,
+    [activity_id]
   );
-  const isTime = check_today_sadhana?.activity_type === 'time';
 
-const storedCount = isTime ? minutesToTime(Number(count)) : count;
-
-  if (check_today_sadhana) {
-    
-    await updateRecord(
-      "daily_report",
-      { count: storedCount },
-      ["activity_id","user_id","activity_date"],
-      [activity_id,user_id,final_activity_date],
-    );
-        console.log("updated")
-    return resp.json({
-      status: 0,
-      code: 200,
-      message: ["updated activity!"],
-      data: {  },
-    });
+  if (!activityInfo) {
+    return resp.json({ status: 0, code: 404, message: ["Activity not found"] });
   }
 
-  const insert_data = await insertRecord(
-    "daily_report",
-    ["user_id", "activity_id", "count",  "activity_date"],
-    [user_id, activity_id,  storedCount,final_activity_date],
-  );
-
-  if (insert_data) {
-    console.log("inserted")
+  // --- NEW LOGIC: DELETE IF COUNT IS 0 ---
+  if (Number(count) === 0) {
+    await db.execute(
+      "DELETE FROM daily_report WHERE activity_id = ? AND user_id = ? AND DATE(activity_date) = ?",
+      [activity_id, user_id, final_activity_date]
+    ); 
+    //select students. in this UI route counsellor/group-ment
     
     return resp.json({
       status: 1,
       code: 200,
-      message: ["Report added successfully!"],
-      data: { },
+      message: ["Activity reset successfully!"],
+      data: {},
     });
   }
+  // ---------------------------------------
+
+  // 2. Evaluate Marking Rules dynamically based on primary counsellor
+  let achievedMarks = 0;
+
+  if (activityInfo.master_activity_id) {
+    // Find primary counsellor
+    const [[primaryCounsellor]] = await db.execute(
+      `SELECT counsller_id FROM user_counsellors WHERE user_id = ? AND counsllor_type = 'primary' LIMIT 1`,
+      [user_id]
+    );
+
+    if (primaryCounsellor) {
+      // Find rules for this activity
+      const [[rule]] = await db.execute(
+        `SELECT condition_operator, condition_value, marks 
+         FROM marking_rules 
+         WHERE counsellor_id = ? AND master_activity_id = ? AND frequency = 'daily' AND status = 1 LIMIT 1`,
+        [primaryCounsellor.counsller_id, activityInfo.master_activity_id]
+      );
+
+      if (rule) {
+        const rawCount = Number(count);
+        const ruleValue = Number(rule.condition_value);
+        let isMatched = false;
+
+        switch (rule.condition_operator) {
+          case '>': isMatched = rawCount > ruleValue; break;
+          case '<': isMatched = rawCount < ruleValue; break;
+          case '>=': isMatched = rawCount >= ruleValue; break;
+          case '<=': isMatched = rawCount <= ruleValue; break;
+          case '=':
+          case '==': isMatched = rawCount == ruleValue; break;
+          case '!=': isMatched = rawCount != ruleValue; break;
+        }
+
+        if (isMatched) achievedMarks = rule.marks;
+      }
+    }
+  }
+
+  // 3. Format the count properly
+  const isTime = activityInfo.activity_type === 'time';
+  const storedCount = isTime ? minutesToTime(Number(count)) : count;
+
+  // 4. Check if record already exists for today
+  const [[check_today_sadhana]] = await db.execute(
+    `SELECT activity_id FROM daily_report WHERE activity_id = ? AND user_id = ? AND DATE(activity_date) = ?`,
+    [activity_id, user_id, final_activity_date]
+  );
+  
+  if (check_today_sadhana) {
+    // Make sure your daily_report table has a `marks` column!
+    await updateRecord(
+      "daily_report",
+      { count: storedCount, marks: achievedMarks },
+      ["activity_id", "user_id", "activity_date"],
+      [activity_id, user_id, final_activity_date]
+    );
+
+    return resp.json({
+      status: 1, 
+      code: 200,
+      message: ["updated activity!"],
+      data: { marks: achievedMarks },
+    });
+  }
+
+  // Insert if not exists
+  const insert_data = await insertRecord(
+    "daily_report",
+    ["user_id", "activity_id", "count", "activity_date", "marks"],
+    [user_id, activity_id, storedCount, final_activity_date, achievedMarks]
+  );
+
+  if (insert_data) {
+    return resp.json({
+      status: 1,
+      code: 200,
+      message: ["Report added successfully!"],
+      data: { marks: achievedMarks },
+    });
+  }
+
+  return resp.json({ status: 0, code: 500, message: ["Failed to save report"] });
 });
-export const addSadhna = asyncHandler(async (req, resp) => {
+
+export const addSadhna = asyncHandler(async (req, resp) => {//20-june-202
 
   const { activity_id, count, activity_date, note, user_id, unit } = req.body;
   
@@ -887,7 +954,6 @@ export const addSadhna = asyncHandler(async (req, resp) => {
     });
   }
 });
-
 
 export const editSadhna = asyncHandler(async (req, resp) => {
   const { activity_id, note, time } = req.body;

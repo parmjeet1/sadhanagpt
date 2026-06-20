@@ -20,16 +20,23 @@ export const getMentorSelectableActivities = asyncHandler(async (req, resp) => {
 
     const params = {
       tableName: "activities",
-      columns: "id AS master_activity_id, name, description, unit, target, activity_type, status, counsellor_id",
+      columns: `id AS master_activity_id, name, 
+      description, unit, target, activity_type, status, counsellor_id,
+      CASE
+    WHEN status = 1 THEN 'default'
+    WHEN status = 2 THEN 'selectable'
+    ELSE 'unknown'
+END AS status_type
+     `,
       sortColumn: "id",
-      sortOrder: "DESC",
+      sortOrder: "ASC",
       page_no,
       limit: rowSelected || 10,
       liveSearchFields: ["name", "description"],
       liveSearchTexts: [search_text, search_text],
       whereField: ["status"],
-      whereValue: [2],
-      whereOperator: ["="],
+      whereValue: [0],
+      whereOperator: ["!="],
     };
 
     const result = await getPaginatedData(params);
