@@ -1,4 +1,4 @@
-import { insertRecord } from "../../utils/dbUtils.js";
+import { insertRecord, deleteRecord } from "../../utils/dbUtils.js";
 import { asyncHandler, mergeParam } from "../../utils/utils.js";
 import validateFields from "../../utils/validation.js";
 
@@ -76,6 +76,112 @@ export const addMarkingRule = asyncHandler(async (req, resp) => {
       status: 0,
       code: 500,
       message: ["Error adding marking rule."],
+    });
+  }
+});
+
+export const saveMarkingSchemeBatch = asyncHandler(async (req, resp) => {
+  try {
+    const { center_id, counsellor_id, activities } = mergeParam(req);
+
+    if (!center_id || !counsellor_id || !Array.isArray(activities)) {
+      return resp.json({ status: 0, code: 422, message: ["Missing required fields or activities must be an array"] });
+    }
+
+    // Delete existing rules for this center_id
+    await deleteRecord("marking_rules", "center_id", center_id);
+
+    const columns = [
+      "center_id",
+      "master_activity_id",
+      "remark",
+      "frequency",
+      "condition_operator",
+      "condition_value",
+      "marks",
+      "counsellor_id",
+      "status"
+    ];
+
+    let insertedCount = 0;
+
+    for (const activity of activities) {
+      // Clean activity id if it's a string like 'def1' or mock id
+      let master_activity_id = activity.id;
+      if (typeof master_activity_id === 'string' && master_activity_id.startsWith('def')) {
+        master_activity_id = parseInt(master_activity_id.replace('def', ''), 10) || 1;
+      }
+
+      const frequency = activity.badge || "Daily";
+
+      const processRows = async (rows) => {
+        if (!rows) return;
+        for (const row of rows) {
+          const conditionStr = row.condition || "";
+          
+          let operator = "=";
+          let value = conditionStr;
+          
+          const rulesMap = {
+            "Before": "<=",
+            "After": ">=",
+            "Exact Time": "=",
+            "At Least": ">=",
+            "Up To": "<=",
+            "Yes": "=",
+            "No": "="
+          };
+
+          for (const [rule, op] of Object.entries(rulesMap)) {
+            if (conditionStr.toLowerCase().startsWith(rule.toLowerCase())) {
+              operator = op;
+              value = conditionStr.substring(rule.length).trim();
+              if (rule === "Yes" || rule === "No") {
+                value = rule;
+              }
+              break;
+            }
+          }
+
+          const values = [
+            center_id,
+            master_activity_id,
+            "", // remark
+            frequency,
+            operator,
+            value,
+            row.marks || 0,
+            counsellor_id,
+            1 // status
+          ];
+
+          await insertRecord("marking_rules", columns, values);
+          insertedCount++;
+        }
+      };
+
+      if (activity.subTables) {
+        for (const sub of activity.subTables) {
+          await processRows(sub.rows);
+        }
+      } else if (activity.rows) {
+        await processRows(activity.rows);
+      }
+    }
+
+    return resp.json({
+      status: 1,
+      code: 200,
+      message: ["Marking scheme saved successfully!"],
+      data: { insertedCount }
+    });
+
+  } catch (error) {
+    console.error("Error saving marking scheme batch:", error);
+    return resp.json({
+      status: 0,
+      code: 500,
+      message: ["Error saving marking scheme."],
     });
   }
 });
