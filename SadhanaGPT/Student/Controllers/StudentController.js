@@ -882,7 +882,6 @@ export const addSadhna = asyncHandler(async (req, resp) => {//20-june-202
     user_id: ["required"],
     // unit: ["required"],
   });
-  console.log("count", count);
   
   if (!isValid) return resp.json({ status: 0, code: 422, message: errors });
   const today = moment().format("YYYY-MM-DD");
@@ -916,8 +915,14 @@ export const addSadhna = asyncHandler(async (req, resp) => {//20-june-202
     });
   }
   // ---------------------------------------
+  const activity = await queryDB(
+  `SELECT activity_type
+   FROM fix_activities
+   WHERE activity_id = ?`,
+  [activity_id]
+);
 
-  const isTime = check_today_sadhana?.activity_type === 'time';
+  const isTime = activity?.activity_type === 'time';
   const storedCount = isTime ? minutesToTime(Number(count)) : count;
   
   if (check_today_sadhana) {
