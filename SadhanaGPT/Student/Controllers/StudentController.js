@@ -1338,7 +1338,7 @@ console.log(mergeParam(req));
 
 export const onBoarding = asyncHandler(async (req, resp) => {
   // here consler email will be ask form studnet ,
-  const { name,email, mobile, temple_id,user_type, counsellor_id='U000000002', added_from = "",device_name = "",
+  const { name,email, mobile, temple_id,user_type, counsellor_id='', added_from = "",device_name = "",
     google_id='',
     profile,
     birthday,
@@ -1364,9 +1364,13 @@ export const onBoarding = asyncHandler(async (req, resp) => {
     });
   }
 
+  // const isExist = await queryDB(
+  //   `SELECT profile, access_token,user_id,email,mobile,temple_id,user_type, 
+  //   (SELECT counsller_id FROM user_counsellors WHERE user_id = users.user_id and 
+  //   counsllor_type='primary' ) AS counsller_id FROM users WHERE 
+  //   email = ?`,[email]);
   const isExist = await queryDB(
-    `SELECT profile, access_token,user_id,email,mobile,temple_id,user_type, 
-    (SELECT counsller_id FROM user_counsellors WHERE user_id = users.user_id and counsllor_type='primary' ) AS counsller_id FROM users WHERE 
+    `SELECT profile, access_token,user_id,email,mobile,temple_id,user_type FROM users WHERE 
     email = ?`,[email]);
   const access_token = crypto.randomBytes(12).toString("hex");
 
@@ -1409,7 +1413,7 @@ export const onBoarding = asyncHandler(async (req, resp) => {
   }
   // CASE 2: Student typed a new counsellor email (not found in DB)
   else if (new_counsellor_email) {
-    // First check if this email already exists (edge case: someone typed exact email of existing user)
+
     const existingCounsellor = await queryDB(
       `SELECT user_id, temple_id FROM users WHERE email = ? AND user_type = 'counsellor' LIMIT 1`,
       [new_counsellor_email]
