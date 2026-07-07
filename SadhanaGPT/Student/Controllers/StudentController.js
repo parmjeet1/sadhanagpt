@@ -1618,8 +1618,8 @@ const registerUser = async (
 
     await db.query(
       `INSERT INTO fix_activities 
-   (user_id,target, name, description, unit, activity_type, own_by)
-   SELECT ?,a.target, a.name, a.description, a.unit, a.activity_type, 0
+   (user_id, master_activity_id, target, name, description, unit, activity_type, own_by)
+   SELECT ?, a.id, a.target, a.name, a.description, a.unit, a.activity_type, 0
    FROM activities a
    WHERE  a.status = 1 AND NOT EXISTS (SELECT 1 FROM fix_activities f  WHERE f.user_id = ? AND f.name = a.name)`,
       [user_id, user_id]);
@@ -1739,7 +1739,16 @@ export const userProfile = asyncHandler(async (req, resp) => {
       u.email,
       u.mobile,
       u.profile,
-      u.temple_id
+      u.birthday as dob,
+      u.temple_id,
+    (SELECT cl.name 
+       FROM user_assignments ua 
+       INNER JOIN center_list cl ON cl.center_id = ua.center_id 
+       WHERE ua.user_id = u.user_id LIMIT 1) as center_name,
+      (SELECT ll.name 
+       FROM user_assignments ua 
+       INNER JOIN labels_list ll ON ll.id = ua.label_id 
+       WHERE ua.user_id = u.user_id LIMIT 1) as label_name
     FROM users u
     WHERE u.user_id = ?
     `,
@@ -1798,6 +1807,9 @@ export const userProfile = asyncHandler(async (req, resp) => {
         email: userData.email,
         mobile: userData.mobile,
         profile: userData.profile,
+        dob: userData.dob,
+        center_name: userData.center_name,
+        label_name: userData.label_name
       },
 
       mentors: mentors.map((m) => ({
@@ -2779,7 +2791,7 @@ export const calculateDailySadhanaScore = async (user_id, activity_date) => {
     [user_id]
   );
   const center_id = centerRows.length > 0 && centerRows[0].center_id !== null ? centerRows[0].center_id : null;
-  console.log('center_id',center_id);
+  console.log('center_id', center_id);
 
   // 2. Fetch user's assigned dashboard activities
   const [userActivities] = await db.execute(
@@ -2799,24 +2811,24 @@ export const calculateDailySadhanaScore = async (user_id, activity_date) => {
     const id = act.master_activity_id || act.fallback_id;
     if (id) validMasterIds.add(id);
   });
-  
+
   const validMasterIdsArray = Array.from(validMasterIds);
   const placeholders = validMasterIdsArray.map(() => '?').join(',');
 
-  console.log('validMasterIdsArray',validMasterIdsArray);
+  console.log('validMasterIdsArray', validMasterIdsArray);
 
   // 3. BULK FETCH: Get ALL logged reports for today in ONE query
   const [reportRows] = await db.execute(
     `SELECT activity_id, marks FROM daily_report WHERE user_id = ? AND DATE(activity_date) = ? AND marks IS NOT NULL`,
     [user_id, targetDateIST]
   );
-  
+
   // Store them in a Map for instant O(1) memory lookup
   const loggedMarksMap = new Map();
   reportRows.forEach(row => {
     loggedMarksMap.set(row.activity_id, Number(row.marks));
   });
-  console.log('loggedMarksMap',loggedMarksMap);
+  console.log('loggedMarksMap', loggedMarksMap);
 
   // 4. BULK FETCH: Get ALL marking rules in ONE query
   const [allRules] = await db.execute(
@@ -2840,7 +2852,7 @@ export const calculateDailySadhanaScore = async (user_id, activity_date) => {
       existingRules.push(rule);
     }
   });
-  console.log('rulesMap',rulesMap);
+  console.log('rulesMap', rulesMap);
 
   // 5. Calculate Total Earned & Possible Marks entirely in memory (0 DB calls here!)
   let totalEarnedMarks = 0;
@@ -2864,8 +2876,8 @@ export const calculateDailySadhanaScore = async (user_id, activity_date) => {
       totalEarnedMarks += loggedMarksMap.get(act.fix_activity_id);
     }
   }
-  console.log('totalEarnedMarks',totalEarnedMarks);
-  console.log('totalPossibleMarks',totalPossibleMarks);
+  console.log('totalEarnedMarks', totalEarnedMarks);
+  console.log('totalPossibleMarks', totalPossibleMarks);
 
   // 6. Calculate final percentage
   let percentage = 0;
@@ -2873,7 +2885,7 @@ export const calculateDailySadhanaScore = async (user_id, activity_date) => {
     percentage = Math.round((totalEarnedMarks / totalPossibleMarks) * 100);
     if (percentage > 100) percentage = 100;
   }
-  console.log('percentage',percentage);
+  console.log('percentage', percentage);
 
   return { totalEarnedMarks, totalPossibleMarks, percentage };
 };
