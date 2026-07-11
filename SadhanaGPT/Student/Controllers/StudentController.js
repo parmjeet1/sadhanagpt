@@ -943,8 +943,7 @@ export const addSadhna = asyncHandler(async (req, resp) => {
     activity_date: ["required"],
     user_id: ["required"],
   });
-  console.log("count", count);
-
+  
   if (!isValid) return resp.json({ status: 0, code: 422, message: errors });
   const today = moment().format("YYYY-MM-DD");
   const final_activity_date = moment(activity_date).format("YYYY-MM-DD");
@@ -959,7 +958,6 @@ export const addSadhna = asyncHandler(async (req, resp) => {
     [activity_id, final_activity_date, user_id],
   );
 
-  const storedCount = count;
   let achievedMarks = null;
 
   try {
@@ -1027,6 +1025,33 @@ export const addSadhna = asyncHandler(async (req, resp) => {
 
     return resp.json({
       status: 1,
+      code: 200,
+      message: ["Activity reset successfully!"],
+      data: {},
+    });
+  }
+  // ---------------------------------------
+  const activity = await queryDB(
+  `SELECT activity_type
+   FROM fix_activities
+   WHERE activity_id = ?`,
+  [activity_id]
+);
+
+  const isTime = activity?.activity_type === 'time';
+  const storedCount = isTime ? minutesToTime(Number(count)) : count;
+  
+  if (check_today_sadhana) {
+    
+    await updateRecord(
+      "daily_report",
+      { count: storedCount },
+      ["activity_id","user_id","activity_date"],
+      [activity_id,user_id,final_activity_date],
+    );
+    console.log("updated")
+    return resp.json({
+      status: 1, // Changed this from 0 to 1 so the frontend shows the success toast!
       code: 200,
       message: ["updated activity!"],
       data: { marks: achievedMarks },
@@ -1437,8 +1462,8 @@ export const addCounsellor = asyncHandler(async (req, resp) => {
 
 export const onBoarding = asyncHandler(async (req, resp) => {
   // here consler email will be ask form studnet ,
-  const { name, email, mobile, temple_id, user_type, counsellor_id = 'U000000002', added_from = "", device_name = "",
-    google_id = '',
+  const { name,email, mobile, temple_id,user_type, counsellor_id='', added_from = "",device_name = "",
+    google_id='',
     profile,
     birthday,
     new_counsellor_email
@@ -1463,6 +1488,11 @@ export const onBoarding = asyncHandler(async (req, resp) => {
     });
   }
 
+  // const isExist = await queryDB(
+  //   `SELECT profile, access_token,user_id,email,mobile,temple_id,user_type, 
+  //   (SELECT counsller_id FROM user_counsellors WHERE user_id = users.user_id and 
+  //   counsllor_type='primary' ) AS counsller_id FROM users WHERE 
+  //   email = ?`,[email]);
   const isExist = await queryDB(
     `SELECT profile, access_token,user_id,email,mobile,temple_id,user_type, 
     (SELECT counsller_id FROM user_counsellors WHERE user_id = users.user_id and counsllor_type='primary' ) AS counsller_id FROM users WHERE 
@@ -1497,6 +1527,7 @@ export const onBoarding = asyncHandler(async (req, resp) => {
   }
   switch (user_type) {
     case "student":
+<<<<<<< HEAD
       // CASE 1: Student selected an existing counsellor from dropdown
       if (counsellor_id) {
         const counsellor = await queryDB(
@@ -1513,6 +1544,24 @@ export const onBoarding = asyncHandler(async (req, resp) => {
           `SELECT user_id, temple_id FROM users WHERE email = ? AND user_type = 'counsellor' LIMIT 1`,
           [new_counsellor_email]
         );
+=======
+  // CASE 1: Student selected an existing counsellor from dropdown
+  if (counsellor_id) {
+    const counsellor = await queryDB(
+      `SELECT temple_id FROM users WHERE user_id = ? limit 1`,
+      [counsellor_id]
+    );
+    final_temple_id = counsellor.temple_id;
+    finally_counsller_id = counsellor_id;
+  }
+  // CASE 2: Student typed a new counsellor email (not found in DB)
+  else if (new_counsellor_email) {
+
+    const existingCounsellor = await queryDB(
+      `SELECT user_id, temple_id FROM users WHERE email = ? AND user_type = 'counsellor' LIMIT 1`,
+      [new_counsellor_email]
+    );
+>>>>>>> origin/main
 
         if (existingCounsellor) {
           // Counsellor already exists with this email, just link them
