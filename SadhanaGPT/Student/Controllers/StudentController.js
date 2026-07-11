@@ -1527,7 +1527,6 @@ export const onBoarding = asyncHandler(async (req, resp) => {
   }
   switch (user_type) {
     case "student":
-<<<<<<< HEAD
       // CASE 1: Student selected an existing counsellor from dropdown
       if (counsellor_id) {
         const counsellor = await queryDB(
@@ -1544,24 +1543,6 @@ export const onBoarding = asyncHandler(async (req, resp) => {
           `SELECT user_id, temple_id FROM users WHERE email = ? AND user_type = 'counsellor' LIMIT 1`,
           [new_counsellor_email]
         );
-=======
-  // CASE 1: Student selected an existing counsellor from dropdown
-  if (counsellor_id) {
-    const counsellor = await queryDB(
-      `SELECT temple_id FROM users WHERE user_id = ? limit 1`,
-      [counsellor_id]
-    );
-    final_temple_id = counsellor.temple_id;
-    finally_counsller_id = counsellor_id;
-  }
-  // CASE 2: Student typed a new counsellor email (not found in DB)
-  else if (new_counsellor_email) {
-
-    const existingCounsellor = await queryDB(
-      `SELECT user_id, temple_id FROM users WHERE email = ? AND user_type = 'counsellor' LIMIT 1`,
-      [new_counsellor_email]
-    );
->>>>>>> origin/main
 
         if (existingCounsellor) {
           // Counsellor already exists with this email, just link them
