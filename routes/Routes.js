@@ -12,6 +12,8 @@ import { irregularMenteesList, toggleMenteeNotification } from "../SadhanaGPT/Me
 import { assignActivitiesToStudents, getMentorSelectableActivities } from "../SadhanaGPT/Controllers/AssingActvtiesController.js";
 import { addMarkingRule } from "../SadhanaGPT/Controllers/MarkingController.js";
 import { saveMarkingSchemeBatch } from '../SadhanaGPT/Controllers/MarkingController.js';
+import { getStudentRank } from '../SadhanaGPT/SummaryData/showRank.js';
+import { getFollowUpStudents } from '../SadhanaGPT/SummaryData/followUpStudents.js';
 
 const router = Router();
 
@@ -124,14 +126,14 @@ const LoggedinRoute = [
     // avtivtry-list is pending for select box
 
 
-    { method: 'post', path: '/api/ai/student-analysis', handler: generateAIAnalysis, role: "counsellor" },
-    { method: 'get', path: '/api/ai/student-analysis/history/:studentId', handler: getStudentAiAnalysisHistory, role: "counsellor" },
-    { method: 'get', path: '/api/ai/student-analysis/report/:reportId', handler: getSingleAiAnalysisReport, role: "counsellor" },
-    { method: 'post', path: '/api/ai/chat', handler: aiChatHandler, role: "counsellor" },
-    { method: 'get', path: '/api/ai/health', handler: aiHealthHandler, role: "counsellor" },
-    { method: 'get', path: '/api/ai/test', handler: aiTestHandler, role: "counsellor" },
-    { method: 'get', path: '/api/ai/debug-auth', handler: aiDebugAuthHandler, role: "counsellor" },
-    { method: 'post', path: '/student-analysis-preview', handler: studentAnalysisPreview, role: "counsellor" },
+    { method: 'post', path: '/ai/student-analysis', handler: generateAIAnalysis, role: "both" },
+    { method: 'get', path: '/ai/student-analysis/history/:studentId', handler: getStudentAiAnalysisHistory, role: "both" },
+    { method: 'get', path: '/ai/student-analysis/report/:reportId', handler: getSingleAiAnalysisReport, role: "both" },
+    { method: 'post', path: '/ai/chat', handler: aiChatHandler, role: "both" },
+    { method: 'get', path: '/ai/health', handler: aiHealthHandler, role: "both" },
+    { method: 'get', path: '/ai/test', handler: aiTestHandler, role: "both" },
+    { method: 'get', path: '/ai/debug-auth', handler: aiDebugAuthHandler, role: "both" },
+    { method: 'post', path: '/student-analysis-preview', handler: studentAnalysisPreview, role: "both" },
     { method: 'post', path: '/bulk-ai-report', handler: bulkaiReport, role: "counsellor" },// not completed
 
     { method: 'post', path: '/ai-report', handler: aiReport, role: "counsellor" },// not completed
@@ -163,7 +165,10 @@ const LoggedinRoute = [
     { method: 'post', path: '/assign-activties-from-mentor', handler: assignActivitiesToStudents , role: "counsellor" },
 //
     { method: 'post', path: '/add-marking-rule', handler: addMarkingRule , role: "counsellor" },
-    { method: 'post', path: '/save-marking-scheme', handler: saveMarkingSchemeBatch , role: "counsellor" }
+    { method: 'post', path: '/save-marking-scheme', handler: saveMarkingSchemeBatch , role: "counsellor" },
+    
+    { method: 'get', path: '/student-rank', handler: getStudentRank, role: "counsellor" },
+    { method: 'get', path: '/student-followup', handler: getFollowUpStudents, role: "counsellor" }
 
         
 

@@ -23,33 +23,48 @@ import moment from "moment";
 import db from "../../../config/database.js";
 import emailQueue from "../../../utils/emails/emailQueue.js";
 import { Console } from "console";
+import { dailyStudentSummary } from '../../SummaryData/summary-report.js';
 
-const calculateBestMarks = (rawCount, rules, activityType) => {
+
+const calculateBestMarks = (rawCount, rules, activityType, unit, activityName) => {
   if (!rules || rules.length === 0) return null;
 
   let bestMarks = null;
-
-  let comparableCount = Number(rawCount);
+  let rawCountNum = Number(rawCount);
   let isTime = activityType === 'time';
 
-  if (isTime && !isNaN(comparableCount)) {
-    let h = Math.floor(comparableCount / 60);
-    let m = comparableCount % 60;
+  // If the frontend explicitly sends the count in hours, convert it to minutes for the DB rule check
+  if (unit && (unit.toLowerCase() === 'hrs' || unit.toLowerCase() === 'hours' || unit.toLowerCase() === 'hr' || unit.toLowerCase() === 'hour')) {
+    rawCountNum = rawCountNum * 60;
+  }
+
+  // Format to HH:MM if it's a time activity
+  let timeStr = null;
+  if (isTime && !isNaN(rawCountNum)) {
+    let h = Math.floor(rawCountNum / 60);
+    let m = rawCountNum % 60;
     h = h < 10 ? '0' + h : h;
     m = m < 10 ? '0' + m : m;
-    comparableCount = `${h}:${m}`;
+    timeStr = `${h}:${m}`;
   }
 
   for (const rule of rules) {
     let ruleVal = rule.condition_value;
-    let cCount = comparableCount;
-    let isMatched = false;
+    let cCount;
 
-    if (!isTime) {
-      cCount = Number(cCount);
+    // Determine how to compare based on whether ruleVal has a colon (HH:MM format)
+    if (isTime && String(ruleVal).includes(':')) {
+      cCount = timeStr; // Compare as HH:MM strings
+      ruleVal = String(ruleVal);
+      // Ensure ruleVal has a leading zero if it's like "7:15"
+      if (ruleVal.length === 4) ruleVal = '0' + ruleVal;
+    } else {
+      // Compare as pure numbers (handles both normal counts AND time rules stored as raw minutes like '135')
+      cCount = rawCountNum;
       ruleVal = Number(ruleVal);
     }
 
+    let isMatched = false;
     switch (rule.condition_operator) {
       case '>': isMatched = cCount > ruleVal; break;
       case '<': isMatched = cCount < ruleVal; break;
@@ -61,8 +76,10 @@ const calculateBestMarks = (rawCount, rules, activityType) => {
     }
 
     if (isMatched) {
-      if (bestMarks === null || rule.marks > bestMarks) {
-        bestMarks = rule.marks;
+      // ALWAYS cast marks to Number to prevent JS string comparison bugs (e.g. "5" > "25")
+      const ruleMarksNum = Number(rule.marks);
+      if (bestMarks === null || ruleMarksNum > bestMarks) {
+        bestMarks = ruleMarksNum;
       }
     }
   }
@@ -917,16 +934,14 @@ export const oldaddSadhna = asyncHandler(async (req, resp) => {
   return resp.json({ status: 0, code: 500, message: ["Failed to save report"] });
 });
 
-export const addSadhna = asyncHandler(async (req, resp) => {//20-june-202
+export const addSadhna = asyncHandler(async (req, resp) => {
 
   const { activity_id, count, activity_date, note, user_id, unit } = req.body;
 
   const { isValid, errors } = validateFields(req.body, {
     activity_id: ["required"],
     activity_date: ["required"],
-    // count: ["required"],
     user_id: ["required"],
-    // unit: ["required"],
   });
   console.log("count", count);
 
@@ -934,6 +949,8 @@ export const addSadhna = asyncHandler(async (req, resp) => {//20-june-202
   const today = moment().format("YYYY-MM-DD");
   const final_activity_date = moment(activity_date).format("YYYY-MM-DD");
 
+  // 1. QUERY: Check if the student has already submitted this specific activity today.
+  // We need to know this so we can decide whether to UPDATE their existing row, or INSERT a new row later.
   const check_today_sadhana = await queryDB(
     `SELECT fa.activity_type, dr.activity_id,dr.note,dr.activity_date,dr.count from daily_report dr
     JOIN fix_activities fa ON  fa.activity_id=dr.activity_id 
@@ -942,14 +959,12 @@ export const addSadhna = asyncHandler(async (req, resp) => {//20-june-202
     [activity_id, final_activity_date, user_id],
   );
 
-
-
-  const storedCount = count; // Always store integer for robust parsing/averaging
-
+  const storedCount = count;
   let achievedMarks = null;
 
   try {
-    // 1. Fetch activity details and ensure it belongs to the user's dashboard
+    // 2. QUERY: Get the master ID of the activity from the student's assigned activities list.
+    // We need the master_activity_id to figure out which scoring rules apply to it.
     const [[activityInfo]] = await db.execute(
       `SELECT name, activity_type, master_activity_id FROM fix_activities WHERE activity_id = ? AND user_id = ? LIMIT 1`,
       [activity_id, user_id]
@@ -958,31 +973,20 @@ export const addSadhna = asyncHandler(async (req, resp) => {//20-june-202
     if (activityInfo) {
       let masterId = activityInfo.master_activity_id;
 
-      // Fallback: if master_activity_id is missing, find it via the master activities table using the activity name
-      if (!masterId && activityInfo.name) {
-        const [[masterAct]] = await db.execute(
-          `SELECT id FROM activities WHERE name = ? LIMIT 1`,
-          [activityInfo.name]
-        );
-        if (masterAct) {
-          masterId = masterAct.id;
-        }
-      }
-
       if (masterId) {
-        // 2. Fetch center_id (group)
+        // 4. QUERY: Find out which Center (Group) this student belongs to.
+        // We need this because different centers might have custom scoring rules for the same activity!
         const [[studentAssignment]] = await db.execute(
           `SELECT center_id FROM user_assignments WHERE user_id = ? ORDER BY id DESC LIMIT 1`,
           [user_id]
         );
-
-        // Get student center
         const center_id = studentAssignment?.center_id;
 
-        // First try center-specific rules
-        // Fetch marking rules (both center-specific and global default)
+        // 5. QUERY: Get all the scoring rules for this specific activity. 
+        // It looks for rules assigned to the student's Center first, and falls back to global default rules (Center 0) if none exist.
+        // It orders by center_id DESC so the specific center rules are prioritized at the top of the list!
         const [fetchedRules] = await db.execute(
-          `SELECT condition_operator, condition_value, marks, center_id
+          `SELECT condition_operator, condition_value, marks, center_id, frequency
            FROM marking_rules 
            WHERE center_id IN (?, 0)
              AND master_activity_id = ? 
@@ -994,34 +998,43 @@ export const addSadhna = asyncHandler(async (req, resp) => {//20-june-202
 
         let rules = fetchedRules;
 
-        // 4. Calculate marks using utility
-        achievedMarks = calculateBestMarks(storedCount, rules, activityInfo.activity_type);
+        // Only calculate marks if it's NOT a weekly activity
+        if (fetchedRules.length > 0) {
+          achievedMarks = calculateBestMarks(storedCount, rules, activityInfo.activity_type, unit);
+        } else {
+          console.log("No marks calculated -> weekly activity.");
+          achievedMarks = 0;
+        }
       }
     }
   } catch (err) {
     console.error("Error during marks calculation:", err);
-    // Continue execution, fallback is marks = null
   }
 
   const currentDateIST = moment().utcOffset('+05:30').format("YYYY-MM-DD HH:mm:ss");
 
   if (check_today_sadhana) {
-
+    // 6. QUERY: If the student already submitted this activity today, 
+    // we just UPDATE their existing record with the new count and new marks.
     await updateRecord(
       "daily_report",
       { count: storedCount, marks: achievedMarks, updated_at: currentDateIST },
       ["activity_id", "user_id", "activity_date"],
       [activity_id, user_id, final_activity_date],
     );
-    console.log("updated")
+    await dailyStudentSummary(user_id, final_activity_date);
+    console.log("updated");
+
     return resp.json({
-      status: 1, // Changed this from 0 to 1 so the frontend shows the success toast!
+      status: 1,
       code: 200,
       message: ["updated activity!"],
       data: { marks: achievedMarks },
     });
   }
 
+  // 7. QUERY: If this is their first time submitting this activity today, 
+  // we CREATE a brand new record for it in the database.
   const insert_data = await insertRecord(
     "daily_report",
     ["user_id", "activity_id", "count", "activity_date", "marks", "created_at", "updated_at"],
@@ -1029,6 +1042,7 @@ export const addSadhna = asyncHandler(async (req, resp) => {//20-june-202
   );
 
   if (insert_data) {
+    await dailyStudentSummary(user_id, final_activity_date);
     console.log("inserted")
 
     return resp.json({
@@ -2785,109 +2799,58 @@ export const calculateDailySadhanaScore = async (user_id, activity_date) => {
     ? moment(activity_date).format("YYYY-MM-DD")
     : moment().utcOffset('+05:30').format("YYYY-MM-DD");
 
-  // 1. Determine student's center_id
-  const [centerRows] = await db.execute(
-    `SELECT center_id FROM user_assignments WHERE user_id = ? ORDER BY id DESC LIMIT 1`,
-    [user_id]
-  );
-  const center_id = centerRows.length > 0 && centerRows[0].center_id !== null ? centerRows[0].center_id : null;
-  console.log('center_id', center_id);
+  try {
+    // 1. Determine student's center_id for custom rule precedence
+    const [centerRows] = await db.execute(
+      `SELECT center_id FROM user_assignments WHERE user_id = ? ORDER BY id DESC LIMIT 1`,
+      [user_id]
+    );
+    const center_id = centerRows.length > 0 && centerRows[0].center_id !== null ? centerRows[0].center_id : 0;
 
-  // 2. Fetch user's assigned dashboard activities
-  const [userActivities] = await db.execute(
-    `SELECT fa.activity_id as fix_activity_id, fa.master_activity_id, fa.name, a.id as fallback_id, a.activity_type 
-     FROM fix_activities fa 
-     LEFT JOIN activities a ON fa.master_activity_id = a.id OR fa.name = a.name 
-     WHERE fa.user_id = ?`,
-    [user_id]
-  );
+    // 2. Get Max Possible Marks (Handles name-fallback and Center precedence in pure SQL)
+    const [maxMarksResult] = await db.execute(`
+      SELECT SUM(COALESCE(specific_rule.marks, global_rule.marks)) as max_marks
+      FROM fix_activities f
+      LEFT JOIN marking_rules specific_rule 
+        ON specific_rule.master_activity_id = f.master_activity_id
+        AND specific_rule.status = 1 
+        AND specific_rule.frequency = 'daily' 
+        AND specific_rule.is_max_marks = 1 
+        AND specific_rule.center_id = ?
+      LEFT JOIN marking_rules global_rule 
+        ON global_rule.master_activity_id = f.master_activity_id 
+        AND global_rule.status = 1 
+        AND global_rule.frequency = 'daily' 
+        AND global_rule.is_max_marks = 1 
+        AND global_rule.center_id = 0
+      WHERE f.user_id = ?
+    `, [center_id, user_id]);
 
-  if (userActivities.length === 0) {
+    // 3. Fetch Today's Total Earned Marks
+    const [earnedMarksResult] = await db.execute(`
+      SELECT SUM(marks) as earned_marks 
+      FROM daily_report 
+      WHERE user_id = ? AND DATE(activity_date) = ?
+    `, [user_id, targetDateIST]);
+
+    // 4. Calculate Percentage and Return
+    const totalPossibleMarks = Number(maxMarksResult[0]?.max_marks) || 0;
+    const totalEarnedMarks = Number(earnedMarksResult[0]?.earned_marks) || 0;
+
+    let percentage = 0;
+    if (totalPossibleMarks > 0) {
+      percentage = Math.round((totalEarnedMarks / totalPossibleMarks) * 100);
+      if (percentage > 100) percentage = 100;
+    }
+
+    console.log(`Center: ${center_id}, Earned: ${totalEarnedMarks}, Max: ${totalPossibleMarks}, %: ${percentage}`);
+
+    return { totalEarnedMarks, totalPossibleMarks, percentage };
+
+  } catch (error) {
+    console.error("Error calculating daily score:", error);
     return { totalEarnedMarks: 0, totalPossibleMarks: 0, percentage: 0 };
   }
-
-  const validMasterIds = new Set();
-  userActivities.forEach(act => {
-    const id = act.master_activity_id || act.fallback_id;
-    if (id) validMasterIds.add(id);
-  });
-
-  const validMasterIdsArray = Array.from(validMasterIds);
-  const placeholders = validMasterIdsArray.map(() => '?').join(',');
-
-  console.log('validMasterIdsArray', validMasterIdsArray);
-
-  // 3. BULK FETCH: Get ALL logged reports for today in ONE query
-  const [reportRows] = await db.execute(
-    `SELECT activity_id, marks FROM daily_report WHERE user_id = ? AND DATE(activity_date) = ? AND marks IS NOT NULL`,
-    [user_id, targetDateIST]
-  );
-
-  // Store them in a Map for instant O(1) memory lookup
-  const loggedMarksMap = new Map();
-  reportRows.forEach(row => {
-    loggedMarksMap.set(row.activity_id, Number(row.marks));
-  });
-  console.log('loggedMarksMap', loggedMarksMap);
-
-  // 4. BULK FETCH: Get ALL marking rules in ONE query
-  const [allRules] = await db.execute(
-    `SELECT master_activity_id, condition_operator, condition_value, marks, center_id
-     FROM marking_rules 
-     WHERE center_id IN (?, 0) AND status = 1 AND frequency = 'daily' 
-     AND master_activity_id IN (${placeholders})
-     ORDER BY center_id = ? DESC`,
-    [center_id || 0, ...validMasterIdsArray, center_id || 0]
-  );
-
-  // Group rules by activity ID in memory
-  const rulesMap = new Map();
-  allRules.forEach(rule => {
-    if (!rulesMap.has(rule.master_activity_id)) {
-      rulesMap.set(rule.master_activity_id, []);
-    }
-    // Only keep rules matching the center precedence logic (since it's ordered by center DESC)
-    const existingRules = rulesMap.get(rule.master_activity_id);
-    if (existingRules.length === 0 || existingRules[0].center_id === rule.center_id) {
-      existingRules.push(rule);
-    }
-  });
-  console.log('rulesMap', rulesMap);
-
-  // 5. Calculate Total Earned & Possible Marks entirely in memory (0 DB calls here!)
-  let totalEarnedMarks = 0;
-  let totalPossibleMarks = 0;
-
-  for (const act of userActivities) {
-    const masterId = act.master_activity_id || act.fallback_id;
-    if (!masterId) continue;
-
-    const activityRules = rulesMap.get(masterId) || [];
-
-    // Max possible marks for this activity
-    let maxPossible = 0;
-    activityRules.forEach(rule => {
-      if (Number(rule.marks) > maxPossible) maxPossible = Number(rule.marks);
-    });
-    totalPossibleMarks += maxPossible;
-
-    // Earned marks logic
-    if (loggedMarksMap.has(act.fix_activity_id)) {
-      totalEarnedMarks += loggedMarksMap.get(act.fix_activity_id);
-    }
-  }
-  console.log('totalEarnedMarks', totalEarnedMarks);
-  console.log('totalPossibleMarks', totalPossibleMarks);
-
-  // 6. Calculate final percentage
-  let percentage = 0;
-  if (totalPossibleMarks > 0) {
-    percentage = Math.round((totalEarnedMarks / totalPossibleMarks) * 100);
-    if (percentage > 100) percentage = 100;
-  }
-  console.log('percentage', percentage);
-
-  return { totalEarnedMarks, totalPossibleMarks, percentage };
 };
 
 

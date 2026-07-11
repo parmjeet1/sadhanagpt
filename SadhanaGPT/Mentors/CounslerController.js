@@ -13,7 +13,7 @@ import validateFields from "../../utils/validation.js";
 import axios from "axios";
 import moment from "moment";
 import { generateStudentKPIs } from "../../utils/analyticsUtils.js";
-import { chatWithAI } from "../../utils/groqService.js";
+import { chatWithAI, generateStudentInsights } from "../../utils/groqService.js";
 import ExcelJS from "exceljs";
 import { Parser } from "json2csv";
 import { uploadFiles } from "../../utils/fileUpload.js";
@@ -3142,21 +3142,134 @@ export const studentNotesList = asyncHandler(async (req, resp) => {
 
 export const studentAnalysisPreview = asyncHandler(async (req, res) => { res.json({ status: 1 }); });
 export const generateAIAnalysis = asyncHandler(async (req, res) => {
-  res.json({
+  const { student_ids, rangeType, dateFrom, dateTo } = req.body;
+  const requestedBy = req.user?.user_id;
+
+  if (!student_ids || !Array.isArray(student_ids) || student_ids.length === 0) {
+    return res.status(400).json({ status: 0, message: "student_ids array is required" });
+  }
+
+  // Resolve date range
+  const today = new Date();
+  const yesterday = new Date(today);
+  yesterday.setDate(today.getDate() - 1);
+  const toDate = dateTo || yesterday.toISOString().split('T')[0];
+
+  let fromDate = dateFrom;
+  if (!fromDate || rangeType !== 'CUSTOM') {
+    const from = new Date(yesterday);
+    if (rangeType === 'LAST_2_DAYS')  from.setDate(yesterday.getDate() - 1);
+    else if (rangeType === 'LAST_7_DAYS')  from.setDate(yesterday.getDate() - 6);
+    else if (rangeType === 'LAST_30_DAYS') from.setDate(yesterday.getDate() - 29);
+    else if (rangeType === 'LAST_90_DAYS') from.setDate(yesterday.getDate() - 89);
+    fromDate = from.toISOString().split('T')[0];
+  }
+
+  // Gather KPIs for each student
+  let allStudentsData = [];
+  for (const studentId of student_ids) {
+    const [[userRow]] = await db.execute(`SELECT name FROM users WHERE user_id = ?`, [studentId]);
+    const studentName = userRow?.name || "Unknown Student";
+
+    const [reportRows] = await db.execute(
+      `SELECT dr.*, fa.name as activity_name, fa.target
+       FROM daily_report dr
+       LEFT JOIN fix_activities fa ON dr.activity_id = fa.activity_id
+       WHERE dr.user_id = ? AND dr.activity_date BETWEEN ? AND ?`,
+      [studentId, fromDate, toDate]
+    );
+
+    const kpis = generateStudentKPIs(reportRows, fromDate, toDate);
+    allStudentsData.push({ studentId, name: studentName, kpis });
+  }
+
+  // Call Groq AI (generateStudentInsights is statically imported at top of file)
+  const aiAnalysis = await generateStudentInsights({ currentKpis: allStudentsData });
+
+  // Save report (for each student in the list)
+  for (const { studentId, kpis } of allStudentsData) {
+    try {
+      await db.execute(
+        `INSERT INTO student_ai_reports (student_id, requested_by, range_type, date_from, date_to, kpis_json, overall_status, strengths_json, laggings_json, recommendations_json, created_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW())`,
+        [
+          studentId,
+          requestedBy,
+          rangeType || 'CUSTOM',
+          fromDate,
+          toDate,
+          JSON.stringify(kpis),
+          aiAnalysis.overallStatus || '',
+          JSON.stringify(aiAnalysis.strengths || []),
+          JSON.stringify(aiAnalysis.laggings || []),
+          JSON.stringify(aiAnalysis.recommendations || [])
+        ]
+      );
+    } catch (saveErr) {
+      console.warn(`[AI] Could not save report for student ${studentId}:`, saveErr.message);
+    }
+  }
+
+  return res.json({
     status: 1,
     data: {
-      kpis: [],
-      aiAnalysis: {
-        overallStatus: "Analysis Complete. The selected student(s) show typical engagement patterns.",
-        strengths: ["Consistently attends sessions", "Shows improvement in recent activities"],
-        laggings: ["Slight drop in engagement on weekends", "Some activities missed recently"],
-        recommendations: ["Follow up during the next session", "Set gentle reminders for missed activities"]
-      }
+      kpis: allStudentsData.map(s => s.kpis),
+      aiAnalysis
     }
   });
 });
-export const getStudentAiAnalysisHistory = asyncHandler(async (req, res) => { res.json({ status: 1 }); });
-export const getSingleAiAnalysisReport = asyncHandler(async (req, res) => { res.json({ status: 1 }); });
+
+export const getStudentAiAnalysisHistory = asyncHandler(async (req, res) => {
+  const { studentId } = req.params;
+  const requestedBy = req.user?.user_id;
+
+  if (!studentId) return res.status(400).json({ status: 0, message: "studentId is required" });
+
+  try {
+    const [rows] = await db.execute(
+      `SELECT id, range_type, date_from, date_to, overall_status, created_at
+       FROM student_ai_reports
+       WHERE student_id = ? AND requested_by = ?
+       ORDER BY created_at DESC LIMIT 20`,
+      [studentId, requestedBy]
+    );
+    return res.json({ status: 1, data: rows });
+  } catch (err) {
+    console.warn("[AI History] Table may not exist:", err.message);
+    return res.json({ status: 1, data: [] });
+  }
+});
+
+export const getSingleAiAnalysisReport = asyncHandler(async (req, res) => {
+  const { reportId } = req.params;
+  const requestedBy = req.user?.user_id;
+
+  if (!reportId) return res.status(400).json({ status: 0, message: "reportId is required" });
+
+  try {
+    const [[row]] = await db.execute(
+      `SELECT * FROM student_ai_reports WHERE id = ? AND requested_by = ?`,
+      [reportId, requestedBy]
+    );
+    if (!row) return res.status(404).json({ status: 0, message: "Report not found" });
+
+    return res.json({
+      status: 1,
+      data: {
+        kpis: JSON.parse(row.kpis_json || '[]'),
+        aiAnalysis: {
+          overallStatus: row.overall_status,
+          strengths: JSON.parse(row.strengths_json || '[]'),
+          laggings: JSON.parse(row.laggings_json || '[]'),
+          recommendations: JSON.parse(row.recommendations_json || '[]')
+        }
+      }
+    });
+  } catch (err) {
+    console.warn("[AI Report] Error fetching report:", err.message);
+    return res.status(500).json({ status: 0, message: "Failed to fetch report" });
+  }
+});
 export const aiChatHandler = asyncHandler(async (req, res) => {
   try {
     console.log("=== AI ANALYSIS STARTED ===");
