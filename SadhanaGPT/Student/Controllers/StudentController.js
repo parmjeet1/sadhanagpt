@@ -602,6 +602,50 @@ export const oldtodayReportlist = asyncHandler(async (req, resp) => {
   };
   return resp.json({ status: 1, code: 200, data });
 });
+const calculateColorForActivities = (activitiesList) => {
+  if (!activitiesList || activitiesList.length === 0) {
+    return '#EF4444'; // Red (no activities assigned)
+  }
+
+  let total_assigned = activitiesList.length;
+  let completed_count = 0;
+  let logged_count = 0;
+
+  activitiesList.forEach(row => {
+    const hasLog = row.count !== null && row.count !== undefined && row.count !== '' && row.count !== 0 && row.count !== '0';
+    if (hasLog) {
+      logged_count++;
+    }
+
+    // Check completion condition
+    let isCompleted = false;
+    const type = (row.activity_type || '').toLowerCase();
+    const countVal = row.count;
+    const targetVal = row.target;
+
+    if (type === 'yes_no' || type === 'boolean') {
+      isCompleted = hasLog && Number(countVal) > 0;
+    } else if (type === 'time') {
+      isCompleted = hasLog;
+    } else {
+      // count/duration
+      isCompleted = hasLog && Number(countVal) >= Number(targetVal);
+    }
+
+    if (isCompleted) {
+      completed_count++;
+    }
+  });
+
+  if (completed_count === total_assigned && total_assigned > 0) {
+    return '#10B981'; // Green
+  } else if (logged_count > 0) {
+    return '#F59E0B'; // Yellow
+  } else {
+    return '#EF4444'; // Red
+  }
+};
+
 export const todayReportlist = asyncHandler(async (req, resp) => {
   const { user_id, activity_date } = req.body;
 
@@ -622,8 +666,23 @@ export const todayReportlist = asyncHandler(async (req, resp) => {
       [user_id, activity_date]
     );
 
+    const [activityRows] = await db.execute(
+      `SELECT 
+        fa.activity_id, 
+        fa.activity_type, 
+        fa.target, 
+        dr.count
+       FROM fix_activities fa
+       LEFT JOIN daily_report dr ON fa.activity_id = dr.activity_id AND dr.user_id = fa.user_id AND DATE(dr.activity_date) = ?
+       WHERE fa.user_id = ?`,
+      [activity_date, user_id]
+    );
+
+    const color = calculateColorForActivities(activityRows);
+
     const response = {
       user_id,
+      color,
       activity_date,
       daily_reports: rows.map((item) => ({
         activity_id: item.activity_id,
@@ -635,6 +694,85 @@ export const todayReportlist = asyncHandler(async (req, resp) => {
       status: 1,
       code: 200,
       data: response,
+    });
+
+  } catch (error) {
+    return resp.json({
+      status: 0,
+      code: 500,
+      message: error.message,
+    });
+  }
+});
+
+export const rangeReportColors = asyncHandler(async (req, resp) => {
+  const { user_id, start_date, end_date } = req.body;
+
+  const { isValid, errors } = validateFields(mergeParam(req), {
+    user_id: ["required"],
+    start_date: ["required"],
+    end_date: ["required"],
+  });
+
+  if (!isValid) {
+    return resp.json({ status: 0, code: 422, message: errors });
+  }
+
+  try {
+    // 1. Fetch assigned activities once
+    const [assignedActivities] = await db.execute(
+      `SELECT activity_id, activity_type, target FROM fix_activities WHERE user_id = ?`,
+      [user_id]
+    );
+
+    // 2. Fetch daily report logs for the date range
+    const [logs] = await db.execute(
+      `SELECT DATE_FORMAT(activity_date, '%Y-%m-%d') as log_date, activity_id, count 
+       FROM daily_report 
+       WHERE user_id = ? AND activity_date BETWEEN ? AND ?`,
+      [user_id, start_date, end_date]
+    );
+
+    // 3. Initialize mapping of date -> list of activities with count initialized to null
+    const dateActivitiesMap = {};
+    let start = new Date(start_date);
+    let end = new Date(end_date);
+    for (let d = new Date(start); d <= end; d.setDate(d.getDate() + 1)) {
+      const yyyy = d.getFullYear();
+      const mm = String(d.getMonth() + 1).padStart(2, '0');
+      const dd = String(d.getDate()).padStart(2, '0');
+      const dateStr = `${yyyy}-${mm}-${dd}`;
+      
+      dateActivitiesMap[dateStr] = assignedActivities.map(act => ({
+        ...act,
+        count: null
+      }));
+    }
+
+    // 4. Populate counts from the logs
+    logs.forEach(log => {
+      const dateStr = log.log_date;
+      if (dateActivitiesMap[dateStr]) {
+        const act = dateActivitiesMap[dateStr].find(a => String(a.activity_id) === String(log.activity_id));
+        if (act) {
+          act.count = log.count;
+        }
+      }
+    });
+
+    // 5. Calculate colors for each date
+    const colors = {};
+    Object.keys(dateActivitiesMap).forEach(dateStr => {
+      colors[dateStr] = calculateColorForActivities(dateActivitiesMap[dateStr]);
+    });
+
+    return resp.json({
+      status: 1,
+      code: 200,
+      data: {
+        user_id,
+        colors
+      }
     });
 
   } catch (error) {
