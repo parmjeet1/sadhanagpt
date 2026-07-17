@@ -959,6 +959,7 @@ export const addSadhna = asyncHandler(async (req, resp) => {
   );
 
   let achievedMarks = null;
+  let storedCount = count;
 
   try {
     // 2. QUERY: Get the master ID of the activity from the student's assigned activities list.
@@ -969,6 +970,9 @@ export const addSadhna = asyncHandler(async (req, resp) => {
     );
 
     if (activityInfo) {
+      if (activityInfo.activity_type === 'time') {
+         storedCount = minutesToTime(Number(count));
+      }
       let masterId = activityInfo.master_activity_id;
 
       if (masterId) {
@@ -1027,36 +1031,10 @@ export const addSadhna = asyncHandler(async (req, resp) => {
       status: 1,
       code: 200,
       message: ["Activity reset successfully!"],
-      data: {},
-    });
-  }
-  // ---------------------------------------
-  const activity = await queryDB(
-  `SELECT activity_type
-   FROM fix_activities
-   WHERE activity_id = ?`,
-  [activity_id]
-);
-
-  const isTime = activity?.activity_type === 'time';
-  const storedCount = isTime ? minutesToTime(Number(count)) : count;
-  
-  if (check_today_sadhana) {
-    
-    await updateRecord(
-      "daily_report",
-      { count: storedCount },
-      ["activity_id","user_id","activity_date"],
-      [activity_id,user_id,final_activity_date],
-    );
-    console.log("updated")
-    return resp.json({
-      status: 1, // Changed this from 0 to 1 so the frontend shows the success toast!
-      code: 200,
-      message: ["updated activity!"],
       data: { marks: achievedMarks },
     });
   }
+
 
   // 7. QUERY: If this is their first time submitting this activity today, 
   // we CREATE a brand new record for it in the database.

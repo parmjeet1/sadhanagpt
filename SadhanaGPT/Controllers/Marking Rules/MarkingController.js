@@ -1,6 +1,7 @@
-import { insertRecord, deleteRecord } from "../../utils/dbUtils.js";
-import { asyncHandler, mergeParam } from "../../utils/utils.js";
-import validateFields from "../../utils/validation.js";
+import { insertRecord, deleteRecord } from "../../../utils/dbUtils.js";
+import { asyncHandler, mergeParam } from "../../../utils/utils.js";
+import validateFields from "../../../utils/validation.js";
+import db from "../../../config/database.js";
 
 export const addMarkingRule = asyncHandler(async (req, resp) => {
   try {
@@ -182,6 +183,41 @@ export const saveMarkingSchemeBatch = asyncHandler(async (req, resp) => {
       status: 0,
       code: 500,
       message: ["Error saving marking scheme."],
+    });
+  }
+});
+
+export const getMarkingRules = asyncHandler(async (req, resp) => {
+  try {
+    const { center_id = 0, label_id = "" } = mergeParam(req);
+    const safeCenterId = db.escape(center_id);
+
+    const query = `
+      SELECT 
+        mr.*, 
+        a.name AS activity_name, 
+        a.unit AS activity_unit, 
+        a.activity_type 
+      FROM marking_rules mr
+      JOIN activities a ON mr.master_activity_id = a.id
+      WHERE mr.center_id = ${safeCenterId} AND mr.status = 1
+      ORDER BY mr.master_activity_id ASC, mr.marks DESC
+    `;
+
+    const [rows] = await db.query(query);
+
+    return resp.json({
+      status: 1,
+      code: 200,
+      message: ["Marking rules fetched successfully!"],
+      data: rows
+    });
+  } catch (error) {
+    console.error("Error fetching marking rules:", error);
+    return resp.json({
+      status: 0,
+      code: 500,
+      message: ["Error fetching marking rules."]
     });
   }
 });

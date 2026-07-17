@@ -1134,7 +1134,7 @@ city,student count as per center list
         */
     const params = {
       tableName: "center_list cl",
-      columns: `cl.center_id, cl.name, cl.city, (SELECT COUNT(DISTINCT ua.user_id) FROM user_assignments ua WHERE ua.center_id = cl.center_id AND ua.counsellor_id COLLATE utf8mb4_unicode_ci = cl.counsller_id COLLATE utf8mb4_unicode_ci) AS total_student`,
+      columns: `cl.center_id, cl.name, cl.city, (SELECT COUNT(DISTINCT ua.user_id) FROM user_assignments ua INNER JOIN user_counsellors uc ON uc.user_id = ua.user_id AND uc.counsller_id = ua.counsellor_id INNER JOIN users u ON u.user_id = uc.user_id WHERE ua.center_id = cl.center_id AND ua.counsellor_id COLLATE utf8mb4_unicode_ci = cl.counsller_id COLLATE utf8mb4_unicode_ci) AS total_student`,
       //    joinCondition :'cl.group_id = uc.group_id',
       // joinTable :'user_counsellors uc',
 
@@ -2929,25 +2929,31 @@ export const addContent = asyncHandler(async (req, resp) => {
 
 export const updateReportSettings = async (req, res) => {
   try {
-    const { user_id, auto_report_status, report_frequency_days } = req.body;
+    const { user_id, auto_report_status, report_frequency_days, report_group_id, report_subgroup_id, report_custom_days } = req.body;
     if (!user_id) {
       return res.status(400).json({
         success: false,
         message: "user_id is thoroughly required."
       });
     }
-    // Sanitize inputs (Convert undefined to null so SQL IFNULL handles it elegantly)
+    // Sanitize inputs
     const statusValue = auto_report_status !== undefined ? Number(auto_report_status) : null;
     const frequencyValue = report_frequency_days !== undefined ? Number(report_frequency_days) : null;
+    const groupIdValue = report_group_id !== undefined ? (report_group_id === 'all' ? 0 : Number(report_group_id)) : null;
+    const subgroupIdValue = report_subgroup_id !== undefined ? (report_subgroup_id === 'all' ? 0 : Number(report_subgroup_id)) : null;
+    const customDaysValue = report_custom_days !== undefined ? Number(report_custom_days) : null;
+    
     // Perform a safe update using IFNULL. 
-    // If a parameter is skipped by the frontend, the DB keeps its current value intact.
     const [result] = await db.execute(`
             UPDATE users 
             SET 
                 auto_report_status = IFNULL(?, auto_report_status), 
-                report_frequency_days = IFNULL(?, report_frequency_days) 
+                report_frequency_days = IFNULL(?, report_frequency_days),
+                report_group_id = IFNULL(?, report_group_id),
+                report_subgroup_id = IFNULL(?, report_subgroup_id),
+                report_custom_days = IFNULL(?, report_custom_days)
             WHERE user_id = ?
-        `, [statusValue, frequencyValue, user_id]);
+        `, [statusValue, frequencyValue, groupIdValue, subgroupIdValue, customDaysValue, user_id]);
     if (result.affectedRows === 0) {
       return res.status(404).json({
         success: false,

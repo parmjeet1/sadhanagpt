@@ -66,7 +66,7 @@ export const getStudentRank = asyncHandler(async (req, res) => {
                 total_marks: numericMarks,
                 percentage: percentage
             };
-        });
+        }).filter(student => student.percentage >= 50);
 
         // Sort by percentage descending
         studentsList.sort((a, b) => b.percentage - a.percentage);
