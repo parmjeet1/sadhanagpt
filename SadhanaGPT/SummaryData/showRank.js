@@ -66,26 +66,56 @@ export const getStudentRank = asyncHandler(async (req, res) => {
         }
 
         // --- INSTANT RANK FOR NEW STUDENTS ---
-        // If the requesting user expects to see themselves in the list (student view)
-        // AND they are missing from the calculated list, we instantly inject them at the bottom.
-        if (user_id && (is_personal_rank === 'true' || is_personal_rank === true || is_student_group_rank === 'true' || is_student_group_rank === true)) {
-            const studentExists = studentsList.some(s => String(s.student_id) === String(user_id));
-            
-            if (!studentExists) {
-                // Fetch their name from the users table
+        if (is_student_group_rank === 'true' || is_student_group_rank === true || center_id) {
+            // Group Rank View: Inject all missing students from this group
+            let targetCenterId = center_id;
+            if (!targetCenterId && user_id) {
+                const [[assign]] = await db.execute('SELECT center_id FROM user_assignments WHERE user_id = ? LIMIT 1', [user_id]);
+                if (assign) targetCenterId = assign.center_id;
+            }
+
+            if (targetCenterId) {
+                const [groupStudents] = await db.execute(`
+                    SELECT u.user_id, u.name FROM user_assignments ua 
+                    JOIN users u ON ua.user_id = u.user_id 
+                    WHERE ua.center_id = ? AND u.user_type = 'student'
+                `, [targetCenterId]);
+
+                let currentLowestRank = studentsList.length > 0 ? Math.max(...studentsList.map(s => s.rank)) : 0;
+                for (const gs of groupStudents) {
+                    if (!studentsList.some(s => String(s.student_id) === String(gs.user_id))) {
+                        currentLowestRank++;
+                        studentsList.push({
+                            student_id: gs.user_id, student_name: gs.name, total_marks: 0, percentage: 0, rank: currentLowestRank
+                        });
+                    }
+                }
+            }
+        } else if (is_personal_rank === 'true' || is_personal_rank === true) {
+            // Global Rank View: Inject only the requesting student if missing
+            if (user_id && !studentsList.some(s => String(s.student_id) === String(user_id))) {
                 const [[userInfo]] = await db.execute('SELECT name FROM users WHERE user_id = ?', [user_id]);
-                
                 if (userInfo) {
-                    const lowestRank = studentsList.length > 0 
-                        ? Math.max(...studentsList.map(s => s.rank)) 
-                        : 0;
-                        
+                    const lowestRank = studentsList.length > 0 ? Math.max(...studentsList.map(s => s.rank)) : 0;
                     studentsList.push({
-                        student_id: user_id,
-                        student_name: userInfo.name,
-                        total_marks: 0,
-                        percentage: 0,
-                        rank: lowestRank + 1
+                        student_id: user_id, student_name: userInfo.name, total_marks: 0, percentage: 0, rank: lowestRank + 1
+                    });
+                }
+            }
+        } else if (user_id) {
+            // Counsellor Analytics View: Inject all missing students assigned to this counsellor
+            const [counsellorStudents] = await db.execute(`
+                SELECT u.user_id, u.name FROM user_counsellors uc 
+                JOIN users u ON uc.user_id = u.user_id 
+                WHERE uc.counsller_id = ? AND u.user_type = 'student'
+            `, [user_id]);
+
+            let currentLowestRank = studentsList.length > 0 ? Math.max(...studentsList.map(s => s.rank)) : 0;
+            for (const cs of counsellorStudents) {
+                if (!studentsList.some(s => String(s.student_id) === String(cs.user_id))) {
+                    currentLowestRank++;
+                    studentsList.push({
+                        student_id: cs.user_id, student_name: cs.name, total_marks: 0, percentage: 0, rank: currentLowestRank
                     });
                 }
             }
