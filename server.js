@@ -191,9 +191,9 @@ process.on("warning", (warning) => {
        freqSadhnaCronjob();
 WeeklyJob();
 
-// Run at 11:00 PM every day
+// Run at 3:00 AM every day to ensure 1AM and 2AM data syncing is complete
 cron.schedule(
-  '0 23 * * *',
+  '30 3 * * *',
   async () => {
     console.log('Running runWeeklyRankJob:', new Date());
     await runWeeklyRankJob();
