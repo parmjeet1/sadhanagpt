@@ -3,13 +3,13 @@ import dotenv from "dotenv";
 dotenv.config();
 
 console.log("=== GROQ SERVICE INITIALIZED ===");
-console.log("AI Model Expected:", process.env.AI_MODEL || "meta-llama/llama-4-scout-17b-16e-instruct");
+console.log("AI Model Expected:", process.env.AI_MODEL || "llama-3.3-70b-versatile");
 console.log("Groq Key Present:", !!process.env.GROQ_API_KEY);
 
 const getModel = () => {
-    const envModel = process.env.AI_MODEL || "meta-llama/llama-4-scout-17b-16e-instruct";
-    if (envModel !== "meta-llama/llama-4-scout-17b-16e-instruct") {
-        console.warn(`[WARN] Model ${envModel} is not meta-llama/llama-4-scout-17b-16e-instruct`);
+    const envModel = process.env.AI_MODEL || "llama-3.3-70b-versatile";
+    if (envModel !== "llama-3.3-70b-versatile") {
+        console.warn(`[WARN] Model ${envModel} is not llama-3.3-70b-versatile`);
     }
     return envModel;
 };

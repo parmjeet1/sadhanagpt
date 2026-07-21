@@ -33,6 +33,10 @@ const calculateBestMarks = (rawCount, rules, activityType, unit, activityName) =
   let rawCountNum = Number(rawCount);
   let isTime = activityType === 'time';
 
+  if (rawCountNum === -1) {
+    return 0; // Do not calculate marks for -1 (unattempted)
+  }
+
   // If the frontend explicitly sends the count in hours, convert it to minutes for the DB rule check
   if (unit && (unit.toLowerCase() === 'hrs' || unit.toLowerCase() === 'hours' || unit.toLowerCase() === 'hr' || unit.toLowerCase() === 'hour')) {
     rawCountNum = rawCountNum * 60;
@@ -54,10 +58,19 @@ const calculateBestMarks = (rawCount, rules, activityType, unit, activityName) =
 
     // Determine how to compare based on whether ruleVal has a colon (HH:MM format)
     if (isTime && String(ruleVal).includes(':')) {
-      cCount = timeStr; // Compare as HH:MM strings
       ruleVal = String(ruleVal);
-      // Ensure ruleVal has a leading zero if it's like "7:15"
       if (ruleVal.length === 4) ruleVal = '0' + ruleVal;
+      
+      // Shift time window so 00:00 - 11:59 comes AFTER 12:00 - 23:59 (handles next-day AM times like 1:00 AM being LATER than 11:00 PM)
+      const shiftTime = (tStr) => {
+        if (!tStr) return tStr;
+        let [h, m] = tStr.split(':').map(Number);
+        if (h < 12) h += 24;
+        return `${h}:${String(m).padStart(2, '0')}`;
+      };
+
+      cCount = shiftTime(timeStr);
+      ruleVal = shiftTime(ruleVal);
     } else {
       // Compare as pure numbers (handles both normal counts AND time rules stored as raw minutes like '135')
       cCount = rawCountNum;
@@ -512,22 +525,36 @@ export const verifyOTP = asyncHandler(async (req, resp) => {
 });
 
 export const addactivity = asyncHandler(async (req, resp) => {
-  const { user_id, name, description = '', target, unit, status, activity_type } = req.body;
+  const { user_id, name, description = '', target, unit: reqUnit, status, activity_type } = req.body;
   const { isValid, errors } = validateFields(mergeParam(req), {
     user_id: ["required"],
     name: ["required"],
-    // description: ["required"],
-    unit: ["required"],
     activity_type: ["required"],
-    status: ["required"],
   });
 
   if (!isValid) return resp.json({ status: 0, code: 422, message: errors });
 
+  let dbType = activity_type.toLowerCase();
+  let dbUnit = reqUnit || '';
+
+  if (dbType === 'duration' || dbType === 'min') {
+    dbType = 'time';
+    dbUnit = 'mins';
+  } else if (dbType === 'time') {
+    dbType = 'time';
+    dbUnit = '';
+  } else if (dbType === 'count' || dbType === 'numb') {
+    dbType = 'numb';
+    dbUnit = 'rounds';
+  } else if (dbType === 'yes/no' || dbType === 'yes_no' || dbType === 'boolean') {
+    dbType = 'boolean';
+    dbUnit = '';
+  }
+
   const insert_data = await insertRecord(
     "fix_activities",
     ["user_id", "name", "description", "unit", "activity_type", "own_by", "target"],
-    [user_id, name, description, unit, activity_type, status, target],
+    [user_id, name, description, dbUnit, dbType, 0, target || 0],
   );
   if (insert_data) {
     return resp.json({
@@ -538,27 +565,41 @@ export const addactivity = asyncHandler(async (req, resp) => {
   }
 });
 export const editActivity = asyncHandler(async (req, resp) => {
-  const { activity_id, user_id, target, name, description = '', unit, status, activity_type } = req.body;
-  console.log("mergeParam(req)", mergeParam(req))
+  const { activity_id, user_id, target, name, description = '', unit: reqUnit, status, activity_type } = req.body;
   const { isValid, errors } = validateFields(mergeParam(req), {
     activity_id: ["required"],
     user_id: ["required"],
     name: ["required"],
-    // description: ["required"],
-    unit: ["required"],
     activity_type: ["required"],
   });
 
   if (!isValid) return resp.json({ status: 0, code: 422, message: errors });
+
+  let dbType = activity_type.toLowerCase();
+  let dbUnit = reqUnit || '';
+
+  if (dbType === 'duration' || dbType === 'min') {
+    dbType = 'time';
+    dbUnit = 'mins';
+  } else if (dbType === 'time') {
+    dbType = 'time';
+    dbUnit = '';
+  } else if (dbType === 'count' || dbType === 'numb') {
+    dbType = 'numb';
+    dbUnit = 'rounds';
+  } else if (dbType === 'yes/no' || dbType === 'yes_no' || dbType === 'boolean') {
+    dbType = 'boolean';
+    dbUnit = '';
+  }
+
   const update_data = await updateRecord(
     "fix_activities",
     {
       name,
       description,
-      unit,
-      activity_type,
-      target,
-      own_by: status
+      unit: dbUnit,
+      activity_type: dbType,
+      target: target || 0
     },
     ["activity_id"],
     [activity_id]
@@ -612,9 +653,10 @@ export const listActivities = asyncHandler(async (req, resp) => {
 
 
   const [all_activities] =
-    await db.execute(`SELECT own_by as status,activity_id, name,description,unit,activity_type,target
-        
-         FROM fix_activities where user_id=?`, [user_id]);//
+    await db.execute(`SELECT fa.own_by as status, fa.activity_id, fa.name, COALESCE(a.description, fa.description) as description, fa.unit, fa.activity_type, fa.target
+         FROM fix_activities fa 
+         LEFT JOIN activities a ON fa.master_activity_id = a.id
+         WHERE fa.user_id=?`, [user_id]);
 
   // if (activities && activities.length=== 0) {
   // return resp.json({ status: 0, code: 404, message: ['No activities found for this user'] });
@@ -1140,7 +1182,7 @@ export const addSadhna = asyncHandler(async (req, resp) => {
 
         // Only calculate marks if it's NOT a weekly activity
         if (fetchedRules.length > 0) {
-          achievedMarks = calculateBestMarks(storedCount, rules, activityInfo.activity_type, unit);
+          achievedMarks = calculateBestMarks(count, rules, activityInfo.activity_type, unit);
         } else {
           console.log("No marks calculated -> weekly activity.");
           achievedMarks = 0;
@@ -2169,8 +2211,8 @@ export const oldStudentActivitiesAnalytics = asyncHandler(async (req, res) => {
   switch (filter) {
 
     case "30days":
-      end_formatted_date = today_moment.format("YYYY-MM-DD");
-      start_formatted_date = today_moment.clone().subtract(29, "days").format("YYYY-MM-DD");
+      end_formatted_date = today_moment.clone().subtract(1, "days").format("YYYY-MM-DD");
+      start_formatted_date = today_moment.clone().subtract(30, "days").format("YYYY-MM-DD");
       break;
 
     case "custom":
@@ -2179,14 +2221,14 @@ export const oldStudentActivitiesAnalytics = asyncHandler(async (req, res) => {
       break;
 
     case "2days":
-      end_formatted_date = today_moment.format("YYYY-MM-DD");
-      start_formatted_date = today_moment.clone().subtract(1, "days").format("YYYY-MM-DD");
+      end_formatted_date = today_moment.clone().subtract(1, "days").format("YYYY-MM-DD");
+      start_formatted_date = today_moment.clone().subtract(2, "days").format("YYYY-MM-DD");
       break;
 
     case "7days":
     default:
-      end_formatted_date = today_moment.format("YYYY-MM-DD");
-      start_formatted_date = today_moment.clone().subtract(6, "days").format("YYYY-MM-DD");
+      end_formatted_date = today_moment.clone().subtract(1, "days").format("YYYY-MM-DD");
+      start_formatted_date = today_moment.clone().subtract(7, "days").format("YYYY-MM-DD");
   }
 
 
@@ -2338,10 +2380,10 @@ export const StudentActivitiesAnalytics = asyncHandler(async (req, res) => {
 
   switch (filter) {
     case "30days":
-      end_formatted_date = today_moment.format("YYYY-MM-DD");
+      end_formatted_date = today_moment.clone().subtract(1, "days").format("YYYY-MM-DD");
       start_formatted_date = today_moment
         .clone()
-        .subtract(29, "days")
+        .subtract(30, "days")
         .format("YYYY-MM-DD");
       break;
 
@@ -2351,19 +2393,19 @@ export const StudentActivitiesAnalytics = asyncHandler(async (req, res) => {
       break;
 
     case "2days":
-      end_formatted_date = today_moment.format("YYYY-MM-DD");
+      end_formatted_date = today_moment.clone().subtract(1, "days").format("YYYY-MM-DD");
       start_formatted_date = today_moment
         .clone()
-        .subtract(1, "days")
+        .subtract(2, "days")
         .format("YYYY-MM-DD");
       break;
 
     case "7days":
     default:
-      end_formatted_date = today_moment.format("YYYY-MM-DD");
+      end_formatted_date = today_moment.clone().subtract(1, "days").format("YYYY-MM-DD");
       start_formatted_date = today_moment
         .clone()
-        .subtract(6, "days")
+        .subtract(7, "days")
         .format("YYYY-MM-DD");
   }
 
@@ -3024,6 +3066,67 @@ export const getDailyScore = asyncHandler(async (req, resp) => {
       status: 0,
       code: 500,
       message: ["Failed to calculate daily score"]
+    });
+  }
+});
+export const getStudentMarkingRules = asyncHandler(async (req, resp) => {
+  try {
+    const { user_id } = mergeParam(req);
+
+    const [[studentAssignment]] = await db.execute(
+      'SELECT center_id FROM user_assignments WHERE user_id = ? ORDER BY id DESC LIMIT 1',
+      [user_id]
+    );
+    const center_id = studentAssignment?.center_id || 0;
+    
+    const query = `
+      SELECT 
+        mr.*, 
+        a.name AS activity_name, 
+        a.unit AS activity_unit, 
+        a.activity_type,
+        a.description AS activity_description
+      FROM marking_rules mr
+      JOIN activities a ON mr.master_activity_id = a.id
+      WHERE mr.center_id IN (?, 0) AND mr.status = 1
+      ORDER BY mr.master_activity_id ASC, mr.marks DESC
+    `;
+
+    const [rows] = await db.execute(query, [center_id]);
+    
+    const activityMap = {};
+    rows.forEach(row => {
+      if (!activityMap[row.master_activity_id]) {
+        activityMap[row.master_activity_id] = [];
+      }
+      activityMap[row.master_activity_id].push(row);
+    });
+    
+    let finalRules = [];
+    for (const activityId in activityMap) {
+      const allRules = activityMap[activityId];
+      const customRules = center_id !== 0 ? allRules.filter(r => r.center_id === center_id) : [];
+      
+      if (customRules.length > 0) {
+        finalRules = finalRules.concat(customRules);
+      } else {
+        const defaultRules = allRules.filter(r => r.center_id === 0);
+        finalRules = finalRules.concat(defaultRules);
+      }
+    }
+
+    return resp.json({
+      status: 1,
+      code: 200,
+      message: ['Student marking rules fetched successfully!'],
+      data: finalRules
+    });
+  } catch (error) {
+    console.error('Error fetching student marking rules:', error);
+    return resp.json({
+      status: 0,
+      code: 500,
+      message: ['Error fetching marking rules.']
     });
   }
 });

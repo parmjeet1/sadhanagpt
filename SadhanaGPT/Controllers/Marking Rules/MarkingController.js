@@ -197,7 +197,8 @@ export const getMarkingRules = asyncHandler(async (req, resp) => {
         mr.*, 
         a.name AS activity_name, 
         a.unit AS activity_unit, 
-        a.activity_type 
+        a.activity_type,
+        a.description AS activity_description
       FROM marking_rules mr
       JOIN activities a ON mr.master_activity_id = a.id
       WHERE mr.center_id = ${safeCenterId} AND mr.status = 1

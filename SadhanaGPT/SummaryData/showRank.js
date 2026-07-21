@@ -1,99 +1,77 @@
 import db from '../../config/database.js';
-import moment from 'moment';
 import { asyncHandler, mergeParam } from "../../utils/utils.js";
 
 /**
- * API to fetch students rank for the last week (Monday to Sunday)
+ * API to fetch students rank from the weekly_student_ranks table
  */
 export const getStudentRank = asyncHandler(async (req, res) => {
     try {
-        const { center_id, user_id } = mergeParam(req);
+        const { center_id, user_id, ignore_50_rule, is_student_group_rank, rank_period, is_personal_rank } = mergeParam(req);
         
-        // Date range: last Monday → last Sunday (matching weeklySummaryUpdate)
-        const lastSunday = moment().day(0).startOf('day'); // Most recent Sunday
-        const lastMonday = moment(lastSunday).subtract(6, 'days').startOf('day'); // Monday before it
-        
-        const fromDate = lastMonday.format('YYYY-MM-DD');
-        const toDate = lastSunday.format('YYYY-MM-DD');
-
-        const daysInPeriod = moment(toDate).diff(moment(fromDate), 'days') + 1;
+        const type = rank_period || 'current_week';
 
         let query = `
             SELECT 
-                u.user_id AS student_id,
+                wsr.user_id AS student_id,
                 u.name AS student_name,
-                COALESCE(SUM(sr.total_marks), 0) AS total_marks,
-                COALESCE(MAX(sr.max_possible_marks), 0) AS daily_max_marks
-            FROM users u
-            LEFT JOIN summary_report sr ON u.user_id = sr.user_id AND sr.activity_date BETWEEN ? AND ?
+                wsr.total_marks,
+                wsr.percentage,
+                wsr.global_rank,
+                wsr.group_rank
+            FROM weekly_student_ranks wsr
+            JOIN users u ON wsr.user_id = u.user_id
+            WHERE wsr.type = ?
         `;
         
-        const params = [fromDate, toDate];
+        const params = [type];
+        let rankField = 'global_rank';
 
         // Filter by center if requested
         if (center_id) {
-            query += `
-                WHERE u.user_id IN (
-                    SELECT user_id FROM user_assignments WHERE center_id = ?
-                )
-            `;
+            query += ` AND wsr.center_id = ?`;
             params.push(center_id);
+            rankField = 'group_rank';
+        } else if (is_student_group_rank === 'true' || is_student_group_rank === true) {
+            // Group Rank: Filter by the logged-in user's group (center_id)
+            query += ` AND wsr.center_id = (SELECT center_id FROM user_assignments WHERE user_id = ? LIMIT 1)`;
+            params.push(user_id);
+            rankField = 'group_rank';
+        } else if (is_personal_rank === 'true' || is_personal_rank === true) {
+            // Global Rank for a personal widget: true global, no filter!
+            // It will fetch all students in the DB and use global_rank
         } else if (user_id) {
-            // Filter by counsellor's students
-            query += `
-                WHERE u.user_id IN (
-                    SELECT user_id FROM user_assignments WHERE counsellor_id = ?
-                )
-            `;
+            // Global Rank: Filter by counsellor (Analytics View)
+            query += ` AND wsr.counsellor_id = ?`;
             params.push(user_id);
         }
 
-        query += `
-            GROUP BY u.user_id, u.name
-        `;
+        query += ` ORDER BY wsr.${rankField} ASC`;
 
         const [rows] = await db.execute(query, params);
-        console.log(`[Rank] Fetched for user_id ${user_id}:`, rows.length, "rows");
+        console.log(`[Rank] Fetched for user_id ${user_id} (${type}):`, rows.length, "rows");
 
         let studentsList = rows.map(student => {
-            const numericMarks = Number(student.total_marks);
-            const dailyMaxMarks = Number(student.daily_max_marks);
-            const maxMarks = dailyMaxMarks * daysInPeriod;
-            const percentage = maxMarks > 0 ? Math.round((numericMarks / maxMarks) * 100) : 0;
             return {
                 student_id: student.student_id,
                 student_name: student.student_name,
-                total_marks: numericMarks,
-                percentage: percentage
-            };
-        }).filter(student => student.percentage >= 50);
-
-        // Sort by percentage descending
-        studentsList.sort((a, b) => b.percentage - a.percentage);
-
-        let currentRank = 1;
-        let previousPercentage = null;
-
-        // Assign rank numbers based on percentage
-        const rankedStudents = studentsList.map((student, index) => {
-            if (previousPercentage !== null && student.percentage < previousPercentage) {
-                currentRank = index + 1;
-            }
-            previousPercentage = student.percentage;
-
-            return {
-                ...student,
-                rank: currentRank
+                total_marks: Number(student.total_marks),
+                percentage: Number(student.percentage),
+                rank: Number(student[rankField])
             };
         });
+
+        // Apply 50% rule if needed
+        if (ignore_50_rule !== 'true' && ignore_50_rule !== true) {
+            studentsList = studentsList.filter(s => s.percentage >= 50);
+        }
 
         return res.json({
             status: 1,
             code: 200,
             message: ["Student ranks fetched successfully"],
             data: {
-                period: `${fromDate} to ${toDate}`,
-                ranks: rankedStudents
+                period: type === 'current_week' ? 'This Week' : 'Last Week',
+                ranks: studentsList
             }
         });
 

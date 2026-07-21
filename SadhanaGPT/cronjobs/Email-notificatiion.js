@@ -344,16 +344,25 @@ export const old2dispatchWeeklyCounsellorReports = async () => {
             const filePath = path.join(os.tmpdir(), fileName);
             fs.writeFileSync(filePath, csvContent);
 
-            const subject = `Weekly Sadhana Report Document (${counsellor.report_days} Days)`;
+            const subject = counsellor.report_days === -1 
+                ? `Weekly Sadhana Report Document (Custom Date Range)` 
+                : `Weekly Sadhana Report Document (${counsellor.report_days} Days)`;
+            
             const html = `
                 <div style="padding: 20px; font-family:sans-serif;">
                     <h2>Hare Krsna ${counsellor.name || ''},</h2>
-                    <p>Attached is your customized structured CSV report organized by Center and Label, showing logs from the last ${counsellor.report_days} days.</p>
+                    <p>Attached is your customized structured CSV report organized by Center and Label, showing logs ${
+                      counsellor.report_days === -1 
+                      ? `for your custom date range.` 
+                      : `from the last ${counsellor.report_days} days.`
+                    }</p>
                 </div>
             `;
             
             const attachment = {
-                filename: `Mentee_Report_Last_${counsellor.report_days}_Days.csv`,
+                filename: counsellor.report_days === -1 
+                    ? `Mentee_Report_Custom_Date_Range.csv` 
+                    : `Mentee_Report_Last_${counsellor.report_days}_Days.csv`,
                 path: filePath,
                 contentType: 'text/csv'
             };
@@ -378,6 +387,8 @@ export const dispatchWeeklyCounsellorReports = async () => {
                 l.name as label_name,
                 c.name AS counsellor_name,
                 c.report_frequency_days,
+                c.email_start_date,
+                c.email_end_date,
                 u.name AS student_name,
                 u.user_id,
                 a.name AS activity_name,
@@ -390,7 +401,11 @@ export const dispatchWeeklyCounsellorReports = async () => {
             LEFT JOIN center_list cl ON cl.center_id = uas.center_id
             LEFT JOIN labels_list l ON l.id = uas.label_id
             LEFT JOIN daily_report dr ON u.user_id = dr.user_id 
-                AND dr.activity_date >= (CURDATE() - INTERVAL (c.report_frequency_days) DAY) AND dr.activity_date < CURDATE()
+                AND (
+                    (c.report_frequency_days != -1 AND dr.activity_date >= (CURDATE() - INTERVAL (c.report_frequency_days) DAY) AND dr.activity_date < CURDATE())
+                    OR
+                    (c.report_frequency_days = -1 AND dr.activity_date >= c.email_start_date AND dr.activity_date <= c.email_end_date)
+                )
             LEFT JOIN fix_activities a ON dr.activity_id = a.activity_id AND a.own_by = 0 
             WHERE c.auto_report_status = 1 
             ORDER BY uc.counsller_id, cl.name, l.name, u.name, dr.activity_date DESC
@@ -490,16 +505,25 @@ export const dispatchWeeklyCounsellorReports = async () => {
             const filePath = path.join(os.tmpdir(), fileName);
             fs.writeFileSync(filePath, csvContent);
 
-            const subject = `Weekly Sadhana Report Document (${counsellor.report_days} Days)`;
+            const subject = counsellor.report_days === -1 
+                ? `Weekly Sadhana Report Document (Custom Date Range)` 
+                : `Weekly Sadhana Report Document (${counsellor.report_days} Days)`;
+            
             const html = `
                 <div style="padding: 20px; font-family:sans-serif;">
                     <h2>Hare Krsna ${counsellor.name || ''},</h2>
-                    <p>Attached is your customized structured CSV report organized by Center and Label, showing logs from the last ${counsellor.report_days} days.</p>
+                    <p>Attached is your customized structured CSV report organized by Center and Label, showing logs ${
+                      counsellor.report_days === -1 
+                      ? `for your custom date range.` 
+                      : `from the last ${counsellor.report_days} days.`
+                    }</p>
                 </div>
             `;
             
             const attachment = {
-                filename: `Mentee_Report_Last_${counsellor.report_days}_Days.csv`,
+                filename: counsellor.report_days === -1 
+                    ? `Mentee_Report_Custom_Date_Range.csv` 
+                    : `Mentee_Report_Last_${counsellor.report_days}_Days.csv`,
                 path: filePath,
                 contentType: 'text/csv'
             };

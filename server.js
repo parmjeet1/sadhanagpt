@@ -22,6 +22,7 @@
       import { sendSadhanaWhatsappReminders } from './SadhanaGPT/cronjobs/WhatsAppMessage.js';
 import { freqSadhnaCronjob, sendSadhanaPushReminders } from './SadhanaGPT/cronjobs/WebPushNotification.js';
 import { WeeklyJob } from './SadhanaGPT/SummaryData/summary-report.js';
+import { runWeeklyRankJob } from './SadhanaGPT/cronjobs/weeklyRankJob.js';
 import TripaRoutes from './tripa-app/src/routes/Routes.js';
 import crypto from 'crypto';
 if (typeof globalThis.crypto === 'undefined') {
@@ -189,4 +190,17 @@ process.on("warning", (warning) => {
      
        freqSadhnaCronjob();
 WeeklyJob();
+
+// Run at 11:00 PM every day
+cron.schedule(
+  '0 23 * * *',
+  async () => {
+    console.log('Running runWeeklyRankJob:', new Date());
+    await runWeeklyRankJob();
+  },
+  {
+    timezone: 'Asia/Kolkata',
+  }
+);
+
 app.use(errorHandler)

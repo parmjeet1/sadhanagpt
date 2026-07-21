@@ -10,6 +10,7 @@ import {
 } from "../../utils/dbUtils.js";
 import { asyncHandler, mergeParam } from "../../utils/utils.js";
 import validateFields from "../../utils/validation.js";
+import { syncStudentActivities } from "../../utils/activitySync.js";
 import axios from "axios";
 import moment from "moment";
 import { generateStudentKPIs } from "../../utils/analyticsUtils.js";
@@ -969,8 +970,8 @@ export const studentActivityDetail = asyncHandler(async (req, res) => {
   switch (filter) {
 
     case "30days":
-      end_formatted_date = today_moment.format("YYYY-MM-DD");
-      start_formatted_date = today_moment.clone().subtract(29, "days").format("YYYY-MM-DD");
+      end_formatted_date = today_moment.clone().subtract(1, "days").format("YYYY-MM-DD");
+      start_formatted_date = today_moment.clone().subtract(30, "days").format("YYYY-MM-DD");
       break;
 
     case "custom":
@@ -980,8 +981,8 @@ export const studentActivityDetail = asyncHandler(async (req, res) => {
 
     case "7days":
     default:
-      end_formatted_date = today_moment.format("YYYY-MM-DD");
-      start_formatted_date = today_moment.clone().subtract(6, "days").format("YYYY-MM-DD");
+      end_formatted_date = today_moment.clone().subtract(1, "days").format("YYYY-MM-DD");
+      start_formatted_date = today_moment.clone().subtract(7, "days").format("YYYY-MM-DD");
   }
 
 
@@ -1344,7 +1345,7 @@ export const assignStudentToCenter = asyncHandler(async (req, resp) => {
 
     // ✅ Check student exists
     const student = await queryDB(
-      `SELECT id, center_id
+      `SELECT id, user_id, center_id
        FROM users
        WHERE id = ?`,
       [student_id]
@@ -1365,6 +1366,13 @@ export const assignStudentToCenter = asyncHandler(async (req, resp) => {
        WHERE id = ?`,
       [center_id, student_id]
     );
+
+    // ✅ Sync activities for this new center
+    if (student && student.length > 0) {
+      await syncStudentActivities([student[0].user_id], center_id, 0, user_id);
+    } else if (student && student.user_id) {
+      await syncStudentActivities([student.user_id], center_id, 0, user_id);
+    }
 
     return resp.json({
       status: 1,
@@ -1513,6 +1521,24 @@ export const bulkAssignStudents = asyncHandler(async (req, resp) => {
       if (!center || (Array.isArray(center) && center.length === 0)) {
         return resp.json({ status: 0, code: 404, message: ["Center not found"] });
       }
+    } else {
+      // ✅ Center ID is 0 -> Remove students from any group (delete record)
+      const placeholders = student_ids.map(() => '?').join(',');
+      const query = `DELETE FROM user_assignments WHERE counsellor_id = ? AND user_id IN (${placeholders})`;
+      const values = [user_id, ...student_ids];
+      const updateResult = await db.execute(query, values);
+      
+      // ✅ Sync activities for the removal
+      await syncStudentActivities(student_ids, 0, 0, user_id);
+
+      return resp.json({
+        status: 1,
+        code: 200,
+        message: ["Students removed from group and strictly added to uncategorized successfully"],
+        data: {
+          affected_rows: updateResult?.affectedRows || student_ids.length
+        }
+      });
     }
 
     // ✅ Build dynamic Bulk Insert/Upsert query
@@ -1540,6 +1566,9 @@ export const bulkAssignStudents = asyncHandler(async (req, resp) => {
     console.log(query)
     // Assuming queryDB or db.execute operates identically:
     const updateResult = await db.execute(query, values);
+
+    // ✅ Sync activities for the newly assigned center/label
+    await syncStudentActivities(student_ids, center_id, _label_id, user_id);
 
     return resp.json({
       status: 1,
@@ -1875,8 +1904,8 @@ export const studentDetails = asyncHandler(async (req, res) => {
 
   switch (filter) {
     case "30days":
-      end_formatted_date = today_moment.format("YYYY-MM-DD");
-      start_formatted_date = today_moment.clone().subtract(29, "days").format("YYYY-MM-DD");
+      end_formatted_date = today_moment.clone().subtract(1, "days").format("YYYY-MM-DD");
+      start_formatted_date = today_moment.clone().subtract(30, "days").format("YYYY-MM-DD");
       break;
 
     case "custom":
@@ -1886,8 +1915,8 @@ export const studentDetails = asyncHandler(async (req, res) => {
 
     case "7days":
     default:
-      end_formatted_date = today_moment.format("YYYY-MM-DD");
-      start_formatted_date = today_moment.clone().subtract(6, "days").format("YYYY-MM-DD");
+      end_formatted_date = today_moment.clone().subtract(1, "days").format("YYYY-MM-DD");
+      start_formatted_date = today_moment.clone().subtract(7, "days").format("YYYY-MM-DD");
   }
 
   const today = moment().format("YYYY-MM-DD");
@@ -2929,7 +2958,7 @@ export const addContent = asyncHandler(async (req, resp) => {
 
 export const updateReportSettings = async (req, res) => {
   try {
-    const { user_id, auto_report_status, report_frequency_days, report_group_id, report_subgroup_id, report_custom_days } = req.body;
+    const { user_id, auto_report_status, report_frequency_days, report_group_id, report_subgroup_id, report_custom_days, email_start_date, email_end_date } = req.body;
     if (!user_id) {
       return res.status(400).json({
         success: false,
@@ -2942,6 +2971,8 @@ export const updateReportSettings = async (req, res) => {
     const groupIdValue = report_group_id !== undefined ? (report_group_id === 'all' ? 0 : Number(report_group_id)) : null;
     const subgroupIdValue = report_subgroup_id !== undefined ? (report_subgroup_id === 'all' ? 0 : Number(report_subgroup_id)) : null;
     const customDaysValue = report_custom_days !== undefined ? Number(report_custom_days) : null;
+    const startDateValue = email_start_date !== undefined ? email_start_date : null;
+    const endDateValue = email_end_date !== undefined ? email_end_date : null;
     
     // Perform a safe update using IFNULL. 
     const [result] = await db.execute(`
@@ -2951,9 +2982,11 @@ export const updateReportSettings = async (req, res) => {
                 report_frequency_days = IFNULL(?, report_frequency_days),
                 report_group_id = IFNULL(?, report_group_id),
                 report_subgroup_id = IFNULL(?, report_subgroup_id),
-                report_custom_days = IFNULL(?, report_custom_days)
+                report_custom_days = IFNULL(?, report_custom_days),
+                email_start_date = IFNULL(?, email_start_date),
+                email_end_date = IFNULL(?, email_end_date)
             WHERE user_id = ?
-        `, [statusValue, frequencyValue, groupIdValue, subgroupIdValue, customDaysValue, user_id]);
+        `, [statusValue, frequencyValue, groupIdValue, subgroupIdValue, customDaysValue, startDateValue, endDateValue, user_id]);
     if (result.affectedRows === 0) {
       return res.status(404).json({
         success: false,
@@ -3196,8 +3229,8 @@ export const generateAIAnalysis = asyncHandler(async (req, res) => {
   for (const { studentId, kpis } of allStudentsData) {
     try {
       await db.execute(
-        `INSERT INTO student_ai_reports (student_id, requested_by, range_type, date_from, date_to, kpis_json, overall_status, strengths_json, laggings_json, recommendations_json, created_at)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW())`,
+        `INSERT INTO student_ai_reports (studentId, createdBy, rangeType, fromDate, toDate, kpis, analysis, model, generatedAt)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, NOW())`,
         [
           studentId,
           requestedBy,
@@ -3205,10 +3238,8 @@ export const generateAIAnalysis = asyncHandler(async (req, res) => {
           fromDate,
           toDate,
           JSON.stringify(kpis),
-          aiAnalysis.overallStatus || '',
-          JSON.stringify(aiAnalysis.strengths || []),
-          JSON.stringify(aiAnalysis.laggings || []),
-          JSON.stringify(aiAnalysis.recommendations || [])
+          JSON.stringify(aiAnalysis),
+          'llama-3.3-70b-versatile'
         ]
       );
     } catch (saveErr) {
@@ -3233,13 +3264,30 @@ export const getStudentAiAnalysisHistory = asyncHandler(async (req, res) => {
 
   try {
     const [rows] = await db.execute(
-      `SELECT id, range_type, date_from, date_to, overall_status, created_at
+      `SELECT id, rangeType as range_type, fromDate as date_from, toDate as date_to, analysis, generatedAt as created_at
        FROM student_ai_reports
-       WHERE student_id = ? AND requested_by = ?
-       ORDER BY created_at DESC LIMIT 20`,
+       WHERE studentId = ? AND createdBy = ?
+       ORDER BY generatedAt DESC LIMIT 20`,
       [studentId, requestedBy]
     );
-    return res.json({ status: 1, data: rows });
+
+    const history = rows.map(r => {
+      let parsedAnalysis = {};
+      try {
+        if (r.analysis) parsedAnalysis = JSON.parse(r.analysis);
+      } catch (e) {}
+      
+      return {
+        id: r.id,
+        range_type: r.range_type,
+        date_from: r.date_from,
+        date_to: r.date_to,
+        overall_status: parsedAnalysis.overallStatus || '',
+        created_at: r.created_at
+      };
+    });
+
+    return res.json({ status: 1, data: history });
   } catch (err) {
     console.warn("[AI History] Table may not exist:", err.message);
     return res.json({ status: 1, data: [] });
@@ -3336,3 +3384,177 @@ Provide concise, conversational, and actionable insights. Use markdown. Do not o
 export const aiHealthHandler = asyncHandler(async (req, res) => { res.json({ status: 1 }); });
 export const aiTestHandler = asyncHandler(async (req, res) => { res.json({ status: 1 }); });
 export const aiDebugAuthHandler = asyncHandler(async (req, res) => { res.json({ status: 1 }); });
+
+export const exportBulkStudentReports = asyncHandler(async (req, res) => {
+  try {
+    const { student_ids, start_date, end_date, filter = "7days", center_id, label_id, counsellor_id } = req.body;
+    
+    let final_student_ids = Array.isArray(student_ids) ? student_ids : [];
+
+    if (center_id) {
+      let studentsQuery = `SELECT user_id FROM user_assignments WHERE center_id = ?`;
+      const studentsParams = [center_id];
+      if (label_id) {
+        studentsQuery += ` AND label_id = ?`;
+        studentsParams.push(label_id);
+      }
+      const [students] = await db.query(studentsQuery, studentsParams);
+      final_student_ids = students.map(s => s.user_id);
+    } else if (counsellor_id) {
+      let studentsQuery = `SELECT u.user_id FROM user_assignments u JOIN centers c ON u.center_id = c.id WHERE c.user_id = ? AND c.status = 1`;
+      const [students] = await db.query(studentsQuery, [counsellor_id]);
+      final_student_ids = students.map(s => s.user_id);
+    }
+
+    if (!final_student_ids || final_student_ids.length === 0) {
+      return res.json({ status: 0, message: "No students provided or found in the group" });
+    }
+
+    let start_formatted_date;
+    let end_formatted_date;
+    const today_moment = moment();
+
+    switch (filter) {
+      case "90days":
+        end_formatted_date = today_moment.clone().subtract(1, "days").format("YYYY-MM-DD");
+        start_formatted_date = today_moment.clone().subtract(90, "days").format("YYYY-MM-DD");
+        break;
+
+      case "30days":
+        end_formatted_date = today_moment.clone().subtract(1, "days").format("YYYY-MM-DD");
+        start_formatted_date = today_moment.clone().subtract(30, "days").format("YYYY-MM-DD");
+        break;
+
+      case "custom":
+        start_formatted_date = moment(start_date).format("YYYY-MM-DD");
+        end_formatted_date = moment(end_date).format("YYYY-MM-DD");
+        break;
+
+      case "7days":
+      default:
+        end_formatted_date = today_moment.clone().subtract(1, "days").format("YYYY-MM-DD");
+        start_formatted_date = today_moment.clone().subtract(7, "days").format("YYYY-MM-DD");
+    }
+
+    if (moment(end_formatted_date).isAfter(today_moment.format("YYYY-MM-DD"))) {
+      end_formatted_date = today_moment.format("YYYY-MM-DD");
+    }
+
+    const placeholders = final_student_ids.map(() => '?').join(',');
+    
+    // 1. Fetch Students
+    const [students] = await db.execute(`
+      SELECT 
+        u.user_id,
+        u.name as student_name,
+        MAX(ua.counsellor_id) as counsellor_id,
+        MAX(c.name) as center_name,
+        MAX(l.name) as label_name
+      FROM users u
+      LEFT JOIN user_assignments ua ON u.user_id = ua.user_id
+      LEFT JOIN center_list c ON ua.center_id = c.center_id
+      LEFT JOIN labels_list l ON ua.label_id = l.id
+      WHERE u.user_id IN (${placeholders})
+      GROUP BY u.user_id, u.name
+    `, [...final_student_ids]);
+
+    // 2. Fetch all daily reports for these students in date range
+    const [reports] = await db.execute(`
+      SELECT 
+        user_id,
+        activity_id,
+        DATE_FORMAT(activity_date,'%Y-%m-%d') as activity_date,
+        count as activity_value,
+        marks as activity_marks
+      FROM daily_report
+      WHERE user_id IN (${placeholders})
+        AND DATE(activity_date) BETWEEN ? AND ?
+    `, [...final_student_ids, start_formatted_date, end_formatted_date]);
+
+    // 3. Fetch all assigned activities for the students, intersecting with group-assigned activities
+    let activities = [];
+    if (final_student_ids.length > 0) {
+      let actsQuery = `
+        SELECT DISTINCT fa.activity_id, fa.name, fa.user_id as student_id
+        FROM fix_activities fa
+        JOIN activities a ON fa.master_activity_id = a.id
+        JOIN user_assignments ua ON fa.user_id = ua.user_id
+        WHERE fa.user_id IN (${placeholders}) 
+          AND fa.own_by = 0
+          AND (
+            -- Condition 1: It was explicitly added by the counselor
+            EXISTS (
+              SELECT 1 FROM counselor_added_activities caa 
+              WHERE caa.master_activity_id = fa.master_activity_id 
+                AND caa.center_id = ua.center_id 
+                AND (caa.label_id = ua.label_id OR caa.label_id IS NULL OR caa.label_id = 0)
+            )
+            OR
+            -- Condition 2: It is a default activity AND has NOT been deleted
+            (a.status = 1 AND NOT EXISTS (
+              SELECT 1 FROM counselor_deleted_activities cda 
+              WHERE cda.master_activity_id = fa.master_activity_id 
+                AND cda.center_id = ua.center_id 
+                AND (cda.label_id = ua.label_id OR cda.label_id IS NULL OR cda.label_id = 0)
+            ))
+          )
+      `;
+      let actsParams = [...final_student_ids];
+
+      if (center_id) {
+        actsQuery += ` AND ua.center_id = ?`;
+        actsParams.push(center_id);
+      }
+      if (label_id) {
+        actsQuery += ` AND ua.label_id = ?`;
+        actsParams.push(label_id);
+      }
+
+      const [acts] = await db.execute(actsQuery, actsParams);
+      activities = acts;
+    }
+
+    // 4. Generate dates array
+    const dateArray = [];
+    let currDate = moment(start_formatted_date);
+    while (currDate.isSameOrBefore(end_formatted_date)) {
+      dateArray.push(currDate.format('YYYY-MM-DD'));
+      currDate.add(1, 'days');
+    }
+
+    // 5. Build Flat Array
+    const finalData = [];
+    
+    const reportMap = {};
+    reports.forEach(r => {
+      if (!reportMap[r.user_id]) reportMap[r.user_id] = {};
+      if (!reportMap[r.user_id][r.activity_date]) reportMap[r.user_id][r.activity_date] = {};
+      reportMap[r.user_id][r.activity_date][r.activity_id] = { val: r.activity_value, marks: r.activity_marks };
+    });
+
+    students.forEach(student => {
+       const stdActs = activities.filter(a => a.student_id === student.user_id);
+       
+       dateArray.forEach(date => {
+          stdActs.forEach(act => {
+             const rep = (reportMap[student.user_id] && reportMap[student.user_id][date] && reportMap[student.user_id][date][act.activity_id]) || { val: 0, marks: 0 };
+             finalData.push({
+                user_id: student.user_id,
+                student_name: student.student_name,
+                center_name: student.center_name || 'N/A',
+                label_name: student.label_name || 'N/A',
+                activity_date: date,
+                activity_name: act.name,
+                activity_value: rep.val,
+                activity_marks: rep.marks || 0
+             });
+          });
+       });
+    });
+
+    res.json({ status: 1, data: finalData });
+  } catch (error) {
+    console.error(error);
+    res.json({ status: 0, message: "Server error" });
+  }
+});

@@ -58,8 +58,8 @@ export const generateStudentKPIs = (rows, fromDate, toDate) => {
     const activities = {
         'Reading': [],
         'Hearing': [],
-        'Wake Up Time': [],
-        'Sleep Time': []
+        'Wake Up': [],
+        'Sleep': []
     };
     
     rows.forEach(r => {
@@ -97,7 +97,7 @@ export const generateStudentKPIs = (rows, fromDate, toDate) => {
     
     const getTrendStatus = (activityName, isTime = false, isLowerBetter = false) => {
         const data = activities[activityName];
-        if (!data || data.length === 0) return { avg: 0, status: 'Consistent' };
+        if (!data || data.length === 0) return { avg: 0, status: 'No Data' };
         
         const firstHalf = [];
         const secondHalf = [];
@@ -151,12 +151,12 @@ export const generateStudentKPIs = (rows, fromDate, toDate) => {
     
     const reading = getTrendStatus('Reading', false, false);
     const hearing = getTrendStatus('Hearing', false, false);
-    const wakeUp = getTrendStatus('Wake Up Time', true, true);
-    const sleep = getTrendStatus('Sleep Time', true, true);
+    const wakeUp = getTrendStatus('Wake Up', true, true);
+    const sleep = getTrendStatus('Sleep', true, true);
     
     // 4. Discipline Scoring
     const getWakeUpDiscipline = (mins) => {
-        if (mins === 0 && activities['Wake Up Time'].length === 0) return 'N/A';
+        if (mins === 0 && activities['Wake Up'].length === 0) return 'N/A';
         let adjustedMins = mins;
         if (adjustedMins > 1080) adjustedMins -= 1440; 
         
@@ -168,7 +168,7 @@ export const generateStudentKPIs = (rows, fromDate, toDate) => {
     };
     
     const getSleepDiscipline = (mins) => {
-        if (mins === 0 && activities['Sleep Time'].length === 0) return 'N/A';
+        if (mins === 0 && activities['Sleep'].length === 0) return 'N/A';
         let adjustedMins = mins;
         if (adjustedMins < 720) adjustedMins += 1440; 
         
@@ -210,13 +210,13 @@ export const generateStudentKPIs = (rows, fromDate, toDate) => {
     const validScores = Object.entries(scores).filter(([_, score]) => score !== -1);
     validScores.sort((a,b) => a[1] - b[1]);
     
-    let strongestHabit = "N/A";
-    let weakestHabit = "N/A";
+    let strongestHabit = "None";
+    let weakestHabit = "None";
     
     if (validScores.length > 0) {
         weakestHabit = validScores[0][0];
-        strongestHabit = validScores[validScores.length - 1][0];
-        // Ensure Strongest/Weakest are different if possible, but if they score the same, it's fine.
+        const highestScore = validScores[validScores.length - 1];
+        strongestHabit = highestScore[1] >= 2 ? highestScore[0] : "None";
     }
     
     // 6. Risk Level
@@ -246,6 +246,16 @@ export const generateStudentKPIs = (rows, fromDate, toDate) => {
     
     const sadhanaScore = maxPossibleScore > 0 ? Math.round((totalScore / maxPossibleScore) * 100) : 0;
     
+    console.log("trackingConsistency : ", trackingConsistency);
+    console.log("missingDays : ", missingDays);
+    console.log("readingStatus : ", reading.status);
+    console.log("hearingStatus : ", hearing.status);
+    console.log("wakeUpStatus : ", wakeUp.status);
+    console.log("sleepStatus : ", sleep.status);
+    console.log("strongestHabit : ", strongestHabit);
+    console.log("weakestHabit : ", weakestHabit);
+    console.log("riskLevel : ", riskLevel);
+    console.log("sadhanaScore : ", sadhanaScore);
     return {
         trackingConsistency,
         missingDays,
@@ -256,11 +266,11 @@ export const generateStudentKPIs = (rows, fromDate, toDate) => {
         averageHearing: Math.round(hearing.avg),
         hearingStatus: hearing.status,
         
-        averageWakeUp: activities['Wake Up Time'].length > 0 ? formatMinutesTo12Hour(wakeUp.avg) : 'N/A',
+        averageWakeUp: activities['Wake Up'].length > 0 ? formatMinutesTo12Hour(wakeUp.avg) : 'N/A',
         wakeUpDiscipline,
         wakeUpStatus: wakeUp.status,
         
-        averageSleep: activities['Sleep Time'].length > 0 ? formatMinutesTo12Hour(sleep.avg) : 'N/A',
+        averageSleep: activities['Sleep'].length > 0 ? formatMinutesTo12Hour(sleep.avg) : 'N/A',
         sleepDiscipline,
         sleepStatus: sleep.status,
         
