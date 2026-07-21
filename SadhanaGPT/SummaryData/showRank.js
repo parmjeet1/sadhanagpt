@@ -65,6 +65,32 @@ export const getStudentRank = asyncHandler(async (req, res) => {
             studentsList = studentsList.filter(s => s.percentage >= 50);
         }
 
+        // --- INSTANT RANK FOR NEW STUDENTS ---
+        // If the requesting user expects to see themselves in the list (student view)
+        // AND they are missing from the calculated list, we instantly inject them at the bottom.
+        if (user_id && (is_personal_rank === 'true' || is_personal_rank === true || is_student_group_rank === 'true' || is_student_group_rank === true)) {
+            const studentExists = studentsList.some(s => String(s.student_id) === String(user_id));
+            
+            if (!studentExists) {
+                // Fetch their name from the users table
+                const [[userInfo]] = await db.execute('SELECT name FROM users WHERE user_id = ?', [user_id]);
+                
+                if (userInfo) {
+                    const lowestRank = studentsList.length > 0 
+                        ? Math.max(...studentsList.map(s => s.rank)) 
+                        : 0;
+                        
+                    studentsList.push({
+                        student_id: user_id,
+                        student_name: userInfo.name,
+                        total_marks: 0,
+                        percentage: 0,
+                        rank: lowestRank + 1
+                    });
+                }
+            }
+        }
+
         return res.json({
             status: 1,
             code: 200,
