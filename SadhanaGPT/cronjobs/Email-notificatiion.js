@@ -116,7 +116,7 @@ export const olddispatchWeeklyCounsellorReports = async () => {
             JOIN center_list cl ON cl.center_id = uas.center_id
             LEFT join labels_list l ON l.id = uas.label_id
             LEFT JOIN daily_report dr ON u.user_id = dr.user_id 
-        AND dr.activity_date >= (CURDATE() - INTERVAL (c.report_frequency_days) DAY)
+        AND dr.activity_date >= (CURDATE() - INTERVAL (c.report_frequency_days) DAY) AND dr.activity_date < CURDATE()
          
             LEFT JOIN fix_activities a ON dr.activity_id = a.activity_id and a.own_by=0 
             
@@ -245,7 +245,7 @@ export const old2dispatchWeeklyCounsellorReports = async () => {
             JOIN center_list cl ON cl.center_id = uas.center_id
             LEFT JOIN labels_list l ON l.id = uas.label_id
             LEFT JOIN daily_report dr ON u.user_id = dr.user_id 
-                AND dr.activity_date >= (CURDATE() - INTERVAL (c.report_frequency_days) DAY)
+                AND dr.activity_date >= (CURDATE() - INTERVAL (c.report_frequency_days) DAY) AND dr.activity_date < CURDATE()
             LEFT JOIN fix_activities a ON dr.activity_id = a.activity_id AND a.own_by = 0 
             WHERE c.auto_report_status = 1 
             ORDER BY uc.counsller_id, cl.name, l.name, u.name, dr.activity_date DESC
@@ -390,7 +390,7 @@ export const dispatchWeeklyCounsellorReports = async () => {
             LEFT JOIN center_list cl ON cl.center_id = uas.center_id
             LEFT JOIN labels_list l ON l.id = uas.label_id
             LEFT JOIN daily_report dr ON u.user_id = dr.user_id 
-                AND dr.activity_date >= (CURDATE() - INTERVAL (c.report_frequency_days) DAY)
+                AND dr.activity_date >= (CURDATE() - INTERVAL (c.report_frequency_days) DAY) AND dr.activity_date < CURDATE()
             LEFT JOIN fix_activities a ON dr.activity_id = a.activity_id AND a.own_by = 0 
             WHERE c.auto_report_status = 1 
             ORDER BY uc.counsller_id, cl.name, l.name, u.name, dr.activity_date DESC

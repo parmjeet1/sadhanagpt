@@ -217,6 +217,38 @@ export const saveSubscription = async (req, res) => {
         return res.status(500).json({ status: 0, message: "Failed to save subscription" });
     }
 };
+
+export const removeSubscription = async (req, res) => {
+    try {
+        const { user_id } = req.body;
+
+        if (!user_id) {
+            return res.status(400).json({ status: 0, message: "user_id is required" });
+        }
+
+        // 1. Delete all push subscription records for this user
+        const [deleteResult] = await db.execute(
+            `DELETE FROM push_subscriptions WHERE user_id = ?`,
+            [user_id]
+        );
+        console.log(`Deleted ${deleteResult.affectedRows} push subscription(s) for user_id: ${user_id}`);
+
+        // 2. Set reminder_enabled = 0 in the users table
+        await db.query(
+            `UPDATE users SET reminder_enabled = 0 WHERE user_id = ?`,
+            [user_id]
+        );
+
+        return res.status(200).json({
+            status: 1,
+            message: "Push notifications disabled successfully",
+            deleted_count: deleteResult.affectedRows
+        });
+    } catch (error) {
+        console.error("Unsubscribe Error:", error);
+        return res.status(500).json({ status: 0, message: "Failed to remove subscription" });
+    }
+};
 export const updateReminderPreferences = async (req, res) => {
   try {
     const { user_id, reminder_enabled=false, reminder_days=3 } = mergeParam(req);

@@ -3,7 +3,7 @@ dotenv.config();
 
 export const Authorization = (req, resp, next) => {
   
-  const apiKey = req.headers['authorization'] || req.query.Authorization || req.body.Authorization;
+  const apiKey = req?.headers?.['authorization'] || req?.query?.Authorization || req?.body?.Authorization;
   const token = process.env.API_AUTH_KEY;
 
   if (!token){
