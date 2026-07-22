@@ -23,6 +23,69 @@ import moment from "moment";
 import db from "../../../config/database.js";
 import emailQueue from "../../../utils/emails/emailQueue.js";
 import { Console } from "console";
+import { dailyStudentSummary } from '../../Controllers/SummaryData/summary-report.js';
+
+
+const calculateBestMarks = (rawCount, rules, activityType, unit, activityName) => {
+  if (!rules || rules.length === 0) return null;
+
+  let bestMarks = null;
+  let rawCountNum = Number(rawCount);
+  let isTime = activityType === 'time';
+
+  // If the frontend explicitly sends the count in hours, convert it to minutes for the DB rule check
+  if (unit && (unit.toLowerCase() === 'hrs' || unit.toLowerCase() === 'hours' || unit.toLowerCase() === 'hr' || unit.toLowerCase() === 'hour')) {
+    rawCountNum = rawCountNum * 60;
+  }
+
+  // Format to HH:MM if it's a time activity
+  let timeStr = null;
+  if (isTime && !isNaN(rawCountNum)) {
+    let h = Math.floor(rawCountNum / 60);
+    let m = rawCountNum % 60;
+    h = h < 10 ? '0' + h : h;
+    m = m < 10 ? '0' + m : m;
+    timeStr = `${h}:${m}`;
+  }
+
+  for (const rule of rules) {
+    let ruleVal = rule.condition_value;
+    let cCount;
+
+    // Determine how to compare based on whether ruleVal has a colon (HH:MM format)
+    if (isTime && String(ruleVal).includes(':')) {
+      cCount = timeStr; // Compare as HH:MM strings
+      ruleVal = String(ruleVal);
+      // Ensure ruleVal has a leading zero if it's like "7:15"
+      if (ruleVal.length === 4) ruleVal = '0' + ruleVal;
+    } else {
+      // Compare as pure numbers (handles both normal counts AND time rules stored as raw minutes like '135')
+      cCount = rawCountNum;
+      ruleVal = Number(ruleVal);
+    }
+
+    let isMatched = false;
+    switch (rule.condition_operator) {
+      case '>': isMatched = cCount > ruleVal; break;
+      case '<': isMatched = cCount < ruleVal; break;
+      case '>=': isMatched = cCount >= ruleVal; break;
+      case '<=': isMatched = cCount <= ruleVal; break;
+      case '=':
+      case '==': isMatched = cCount == ruleVal; break;
+      case '!=': isMatched = cCount != ruleVal; break;
+    }
+
+    if (isMatched) {
+      // ALWAYS cast marks to Number to prevent JS string comparison bugs (e.g. "5" > "25")
+      const ruleMarksNum = Number(rule.marks);
+      if (bestMarks === null || ruleMarksNum > bestMarks) {
+        bestMarks = ruleMarksNum;
+      }
+    }
+  }
+
+  return bestMarks;
+};
 
 export const studentRegister = asyncHandler(async (req, resp) => {
   const {
@@ -50,7 +113,7 @@ export const studentRegister = asyncHandler(async (req, resp) => {
 
   // const res = checkNumber("+91", mobile);
   // if(res.status == 0) return resp.json({ status:0, code:422, message: [res.msg] });
-  
+
   const [[isExist]] = await db.execute(
     `
         SELECT COUNT(*) AS check_email FROM users AS u WHERE u.email = ?
@@ -89,8 +152,8 @@ export const studentRegister = asyncHandler(async (req, resp) => {
       email,
       hashedPassword,
       mobile,
-      0,
       age,
+      1,
       counsller_id,
       added_from || "WEB",
       device_name,
@@ -126,9 +189,9 @@ export const studentRegister = asyncHandler(async (req, resp) => {
     data: { user: result },
   });
 });
-export const addCounsller= asyncHandler(async (req, resp) => {
-// type mentor email id, and then find 
-const {studnet_id,counsler_email} = req.body;
+export const addCounsller = asyncHandler(async (req, resp) => {
+  // type mentor email id, and then find 
+  const { studnet_id, counsler_email } = req.body;
 })
 
 export const Registertest = asyncHandler(async (req, resp) => {
@@ -449,7 +512,7 @@ export const verifyOTP = asyncHandler(async (req, resp) => {
 });
 
 export const addactivity = asyncHandler(async (req, resp) => {
-  const { user_id, name, description='',target, unit,status, activity_type } = req.body;
+  const { user_id, name, description = '', target, unit, status, activity_type } = req.body;
   const { isValid, errors } = validateFields(mergeParam(req), {
     user_id: ["required"],
     name: ["required"],
@@ -463,8 +526,8 @@ export const addactivity = asyncHandler(async (req, resp) => {
 
   const insert_data = await insertRecord(
     "fix_activities",
-    ["user_id", "name", "description", "unit", "activity_type","own_by","target"],
-    [user_id, name, description, unit, activity_type,status,target],
+    ["user_id", "name", "description", "unit", "activity_type", "own_by", "target"],
+    [user_id, name, description, unit, activity_type, status, target],
   );
   if (insert_data) {
     return resp.json({
@@ -475,8 +538,8 @@ export const addactivity = asyncHandler(async (req, resp) => {
   }
 });
 export const editActivity = asyncHandler(async (req, resp) => {
-  const { activity_id, user_id, target, name, description='', unit,status, activity_type } = req.body;
-console.log("mergeParam(req)",mergeParam(req))
+  const { activity_id, user_id, target, name, description = '', unit, status, activity_type } = req.body;
+  console.log("mergeParam(req)", mergeParam(req))
   const { isValid, errors } = validateFields(mergeParam(req), {
     activity_id: ["required"],
     user_id: ["required"],
@@ -488,18 +551,18 @@ console.log("mergeParam(req)",mergeParam(req))
 
   if (!isValid) return resp.json({ status: 0, code: 422, message: errors });
   const update_data = await updateRecord(
-  "fix_activities",
-  {
-    name,
-    description,
-    unit,
-    activity_type,
-    target,
-    own_by: status
-  },
-  ["activity_id"],
-  [activity_id]
-);
+    "fix_activities",
+    {
+      name,
+      description,
+      unit,
+      activity_type,
+      target,
+      own_by: status
+    },
+    ["activity_id"],
+    [activity_id]
+  );
 
   if (update_data) {
     return resp.json({
@@ -518,11 +581,11 @@ export const deleteActivity = asyncHandler(async (req, resp) => {
   });
 
   if (!isValid) return resp.json({ status: 0, code: 422, message: errors });
-const delete_data = await db.execute(
-  `DELETE FROM fix_activities 
+  const delete_data = await db.execute(
+    `DELETE FROM fix_activities 
    WHERE activity_id = ? AND user_id = ?`,
-  [activity_id, user_id]
-);
+    [activity_id, user_id]
+  );
   if (delete_data) {
     return resp.json({
       status: 1,
@@ -547,11 +610,11 @@ export const listActivities = asyncHandler(async (req, resp) => {
 
   if (!isValid) return resp.json({ status: 0, code: 422, message: errors });
 
-  
+
   const [all_activities] =
     await db.execute(`SELECT own_by as status,activity_id, name,description,unit,activity_type,target
         
-         FROM fix_activities where user_id=?`,[user_id]);//
+         FROM fix_activities where user_id=?`, [user_id]);//
 
   // if (activities && activities.length=== 0) {
   // return resp.json({ status: 0, code: 404, message: ['No activities found for this user'] });
@@ -886,13 +949,13 @@ function minutesToTime(mins) {
 export const oldaddSadhna = asyncHandler(async (req, resp) => {
 
   const { activity_id, count, activity_date, note, user_id, unit } = req.body;
-  
+
   const { isValid, errors } = validateFields(req.body, {
     activity_id: ["required"],
     activity_date: ["required"],
     user_id: ["required"],
   });
-  
+
   if (!isValid) return resp.json({ status: 0, code: 422, message: errors });
 
   const final_activity_date = moment(activity_date).format("YYYY-MM-DD");
@@ -912,9 +975,9 @@ export const oldaddSadhna = asyncHandler(async (req, resp) => {
     await db.execute(
       "DELETE FROM daily_report WHERE activity_id = ? AND user_id = ? AND DATE(activity_date) = ?",
       [activity_id, user_id, final_activity_date]
-    ); 
+    );
     //select students. in this UI route counsellor/group-ment
-    
+
     return resp.json({
       status: 1,
       code: 200,
@@ -972,7 +1035,7 @@ export const oldaddSadhna = asyncHandler(async (req, resp) => {
     `SELECT activity_id FROM daily_report WHERE activity_id = ? AND user_id = ? AND DATE(activity_date) = ?`,
     [activity_id, user_id, final_activity_date]
   );
-  
+
   if (check_today_sadhana) {
     // Make sure your daily_report table has a `marks` column!
     await updateRecord(
@@ -983,7 +1046,7 @@ export const oldaddSadhna = asyncHandler(async (req, resp) => {
     );
 
     return resp.json({
-      status: 1, 
+      status: 1,
       code: 200,
       message: ["updated activity!"],
       data: { marks: achievedMarks },
@@ -1009,91 +1072,125 @@ export const oldaddSadhna = asyncHandler(async (req, resp) => {
   return resp.json({ status: 0, code: 500, message: ["Failed to save report"] });
 });
 
-export const addSadhna = asyncHandler(async (req, resp) => {//20-june-202
+export const addSadhna = asyncHandler(async (req, resp) => {
 
   const { activity_id, count, activity_date, note, user_id, unit } = req.body;
-  
+
   const { isValid, errors } = validateFields(req.body, {
     activity_id: ["required"],
     activity_date: ["required"],
-    // count: ["required"],
     user_id: ["required"],
-    // unit: ["required"],
   });
   
   if (!isValid) return resp.json({ status: 0, code: 422, message: errors });
   const today = moment().format("YYYY-MM-DD");
   const final_activity_date = moment(activity_date).format("YYYY-MM-DD");
-  
+
+  // 1. QUERY: Check if the student has already submitted this specific activity today.
+  // We need to know this so we can decide whether to UPDATE their existing row, or INSERT a new row later.
   const check_today_sadhana = await queryDB(
     `SELECT fa.activity_type, dr.activity_id,dr.note,dr.activity_date,dr.count from daily_report dr
     JOIN fix_activities fa ON  fa.activity_id=dr.activity_id 
     where
-         dr.activity_id=? and DATE(dr.activity_date)=? `,
-    [activity_id, final_activity_date],
+         dr.activity_id=? and DATE(dr.activity_date)=? AND dr.user_id=? `,
+    [activity_id, final_activity_date, user_id],
   );
 
-  // --- NEW LOGIC: DELETE IF COUNT IS 0 ---
-  // We use Number() to catch both 0 (number) and "0" (string)
-  if (Number(count) === 0) {
-    if (check_today_sadhana) {
-      await db.execute(
-        "DELETE FROM daily_report WHERE activity_id = ? AND user_id = ? AND DATE(activity_date) = ?",
-        [activity_id, user_id, final_activity_date]
-      );
-      console.log("deleted 0 count record");
+  let achievedMarks = null;
+  let storedCount = count;
+
+  try {
+    // 2. QUERY: Get the master ID of the activity from the student's assigned activities list.
+    // We need the master_activity_id to figure out which scoring rules apply to it.
+    const [[activityInfo]] = await db.execute(
+      `SELECT name, activity_type, master_activity_id FROM fix_activities WHERE activity_id = ? AND user_id = ? LIMIT 1`,
+      [activity_id, user_id]
+    );
+
+    if (activityInfo) {
+      if (activityInfo.activity_type === 'time') {
+         storedCount = minutesToTime(Number(count));
+      }
+      let masterId = activityInfo.master_activity_id;
+
+      if (masterId) {
+        // 4. QUERY: Find out which Center (Group) this student belongs to.
+        // We need this because different centers might have custom scoring rules for the same activity!
+        const [[studentAssignment]] = await db.execute(
+          `SELECT center_id FROM user_assignments WHERE user_id = ? ORDER BY id DESC LIMIT 1`,
+          [user_id]
+        );
+        const center_id = studentAssignment?.center_id;
+
+        // 5. QUERY: Get all the scoring rules for this specific activity. 
+        // It looks for rules assigned to the student's Center first, and falls back to global default rules (Center 0) if none exist.
+        // It orders by center_id DESC so the specific center rules are prioritized at the top of the list!
+        const [fetchedRules] = await db.execute(
+          `SELECT condition_operator, condition_value, marks, center_id, frequency
+           FROM marking_rules 
+           WHERE center_id IN (?, 0)
+             AND master_activity_id = ? 
+             AND status = 1 
+             AND frequency = 'daily'
+           ORDER BY center_id = ? DESC`,
+          [center_id || 0, masterId, center_id || 0]
+        );
+
+        let rules = fetchedRules;
+
+        // Only calculate marks if it's NOT a weekly activity
+        if (fetchedRules.length > 0) {
+          achievedMarks = calculateBestMarks(storedCount, rules, activityInfo.activity_type, unit);
+        } else {
+          console.log("No marks calculated -> weekly activity.");
+          achievedMarks = 0;
+        }
+      }
     }
-    
-    // Return success (status: 1) so the frontend card updates cleanly
+  } catch (err) {
+    console.error("Error during marks calculation:", err);
+  }
+
+  const currentDateIST = moment().utcOffset('+05:30').format("YYYY-MM-DD HH:mm:ss");
+
+  if (check_today_sadhana) {
+    // 6. QUERY: If the student already submitted this activity today, 
+    // we just UPDATE their existing record with the new count and new marks.
+    await updateRecord(
+      "daily_report",
+      { count: storedCount, marks: achievedMarks, updated_at: currentDateIST },
+      ["activity_id", "user_id", "activity_date"],
+      [activity_id, user_id, final_activity_date],
+    );
+    await dailyStudentSummary(user_id, final_activity_date);
+    console.log("updated");
+
     return resp.json({
       status: 1,
       code: 200,
       message: ["Activity reset successfully!"],
-      data: {},
-    });
-  }
-  // ---------------------------------------
-  const activity = await queryDB(
-  `SELECT activity_type
-   FROM fix_activities
-   WHERE activity_id = ?`,
-  [activity_id]
-);
-
-  const isTime = activity?.activity_type === 'time';
-  const storedCount = isTime ? minutesToTime(Number(count)) : count;
-  
-  if (check_today_sadhana) {
-    
-    await updateRecord(
-      "daily_report",
-      { count: storedCount },
-      ["activity_id","user_id","activity_date"],
-      [activity_id,user_id,final_activity_date],
-    );
-    console.log("updated")
-    return resp.json({
-      status: 1, // Changed this from 0 to 1 so the frontend shows the success toast!
-      code: 200,
-      message: ["updated activity!"],
-      data: {  },
+      data: { marks: achievedMarks },
     });
   }
 
+
+  // 7. QUERY: If this is their first time submitting this activity today, 
+  // we CREATE a brand new record for it in the database.
   const insert_data = await insertRecord(
     "daily_report",
-    ["user_id", "activity_id", "count",  "activity_date"],
-    [user_id, activity_id,  storedCount,final_activity_date],
+    ["user_id", "activity_id", "count", "activity_date", "marks", "created_at", "updated_at"],
+    [user_id, activity_id, storedCount, final_activity_date, achievedMarks, currentDateIST, currentDateIST],
   );
 
   if (insert_data) {
+    await dailyStudentSummary(user_id, final_activity_date);
     console.log("inserted")
-    
+
     return resp.json({
       status: 1,
       code: 200,
       message: ["Report added successfully!"],
-      data: { },
+      data: { marks: achievedMarks },
     });
   }
 });
@@ -1211,7 +1308,7 @@ export const listCounsellor = asyncHandler(async (req, resp) => {
   const request = mergeParam(req);
 
   const { search_text, } = request;
-console.log("request", request);
+  console.log("request", request);
   const { isValid, errors } = validateFields(request, {
     // temple_id: ["required"],
   });
@@ -1233,13 +1330,13 @@ console.log("request", request);
   //   [ "counsellor",search_text,search_text],
   // );
   const [counsellor_list] = await db.execute(
-  `SELECT user_id, name
+    `SELECT user_id, name
    FROM users
    WHERE user_type = ?
    AND status = 1
    AND (name LIKE ? OR email LIKE ?)`,
-  ["counsellor", `%${search_text}%`, `%${search_text}%`],
-);
+    ["counsellor", `%${search_text}%`, `%${search_text}%`],
+  );
 
   if (!counsellor_list || counsellor_list.length === 0) {
     return resp.json({
@@ -1259,7 +1356,7 @@ console.log("request", request);
 export const verifyCounsellor = asyncHandler(async (req, resp) => {
   const request = mergeParam(req);
 
-  const { user_id,counsellor_id } = request;
+  const { user_id, counsellor_id } = request;
 
   // Basic validation
   if (!counsellor_id) {
@@ -1365,7 +1462,7 @@ export const updateStudentDetails = asyncHandler(async (req, resp) => {
 });
 export const addCounsellor = asyncHandler(async (req, resp) => {
   const { user_id, counsller_id } = mergeParam(req);
-console.log(mergeParam(req));
+  console.log(mergeParam(req));
   /* ---------------------------
      VALIDATION
   ----------------------------*/
@@ -1374,7 +1471,7 @@ console.log(mergeParam(req));
     {
       user_id: ["required"],
       counsller_id: ["required"],
-      
+
     }
   );
 
@@ -1389,7 +1486,7 @@ console.log(mergeParam(req));
     `SELECT name,email,mobile,user_id FROM users WHERE user_id = ?`,
     [user_id]
   );
- 
+
   if (!user) {
     return resp.json({
       status: 0,
@@ -1437,9 +1534,9 @@ console.log(mergeParam(req));
   /* ---------------------------
      INSERT
   ----------------------------*/
- 
+
   const subject = "New Student Registration 🙏";
-          const htmlContent = `
+  const htmlContent = `
                     <div style="font-family: sans-serif; padding: 20px; border: 1px solid #e2e8f0; border-radius: 12px; max-width: 600px;">
                         <h2 style="color: #0f172a; border-bottom: 2px solid #1a73e8; padding-bottom: 10px;">Hare Krsna, ${counsellor.name}!</h2>
                         <p style="font-size: 16px; color: #475569;">A new student has been added to your care on <strong>SadhanaGPT</strong>.</p>
@@ -1464,9 +1561,9 @@ console.log(mergeParam(req));
                         </p>
                     </div>
                 `;
-          emailQueue.addEmail(counsellor.email, subject, htmlContent);
-        
- await insertRecord(
+  emailQueue.addEmail(counsellor.email, subject, htmlContent);
+
+  await insertRecord(
     "user_counsellors",
     ["user_id", "counsller_id"],
     [user_id, counsller_id]
@@ -1513,8 +1610,9 @@ export const onBoarding = asyncHandler(async (req, resp) => {
   //   counsllor_type='primary' ) AS counsller_id FROM users WHERE 
   //   email = ?`,[email]);
   const isExist = await queryDB(
-    `SELECT profile, access_token,user_id,email,mobile,temple_id,user_type FROM users WHERE 
-    email = ?`,[email]);
+    `SELECT profile, access_token,user_id,email,mobile,temple_id,user_type, 
+    (SELECT counsller_id FROM user_counsellors WHERE user_id = users.user_id and counsllor_type='primary' ) AS counsller_id FROM users WHERE 
+    email = ?`, [email]);
   const access_token = crypto.randomBytes(12).toString("hex");
 
   if (isExist) {
@@ -1529,7 +1627,7 @@ export const onBoarding = asyncHandler(async (req, resp) => {
       status: 1,
       code: 200,
       data: {
-        user_id:isExist.user_id,
+        user_id: isExist.user_id,
         email: isExist.email,
         name: isExist.name,
         mobile: isExist.mobile,
@@ -1537,62 +1635,62 @@ export const onBoarding = asyncHandler(async (req, resp) => {
         temple_id: isExist.temple_id,
         user_type: isExist.user_type,
         counsller_id: isExist.counsller_id,
-        profile:isExist.profile ? isExist.profile : process.env.IMAGE_UPLOAD_PATH + "default_profile.png",
-      
+        profile: isExist.profile ? isExist.profile : process.env.IMAGE_UPLOAD_PATH + "default_profile.png",
+
       },
       message: ["User registred successfully"],
     });
   }
   switch (user_type) {
     case "student":
-  // CASE 1: Student selected an existing counsellor from dropdown
-  if (counsellor_id) {
-    const counsellor = await queryDB(
-      `SELECT temple_id FROM users WHERE user_id = ? limit 1`,
-      [counsellor_id]
-    );
-    final_temple_id = counsellor.temple_id;
-    finally_counsller_id = counsellor_id;
-  }
-  // CASE 2: Student typed a new counsellor email (not found in DB)
-  else if (new_counsellor_email) {
+      // CASE 1: Student selected an existing counsellor from dropdown
+      if (counsellor_id) {
+        const counsellor = await queryDB(
+          `SELECT temple_id FROM users WHERE user_id = ? limit 1`,
+          [counsellor_id]
+        );
+        final_temple_id = counsellor.temple_id;
+        finally_counsller_id = counsellor_id;
+      }
+      // CASE 2: Student typed a new counsellor email (not found in DB)
+      else if (new_counsellor_email) {
+        // First check if this email already exists (edge case: someone typed exact email of existing user)
+        const existingCounsellor = await queryDB(
+          `SELECT user_id, temple_id FROM users WHERE email = ? AND user_type = 'counsellor' LIMIT 1`,
+          [new_counsellor_email]
+        );
 
-    const existingCounsellor = await queryDB(
-      `SELECT user_id, temple_id FROM users WHERE email = ? AND user_type = 'counsellor' LIMIT 1`,
-      [new_counsellor_email]
-    );
+        if (existingCounsellor) {
+          // Counsellor already exists with this email, just link them
+          final_temple_id = existingCounsellor.temple_id;
+          finally_counsller_id = existingCounsellor.user_id;
+        } else {
+          // Create a new placeholder counsellor
+          const newCounsellorName = new_counsellor_email.split('@')[0]; // Use email prefix as temp name
 
-    if (existingCounsellor) {
-      // Counsellor already exists with this email, just link them
-      final_temple_id = existingCounsellor.temple_id;
-      finally_counsller_id = existingCounsellor.user_id;
-    } else {
-      // Create a new placeholder counsellor
-      const newCounsellorName = new_counsellor_email.split('@')[0]; // Use email prefix as temp name
-      
-      await db.execute(
-        `INSERT INTO users (name, email, user_type, status) VALUES (?,  ?, 'counsellor', 1)`,
-        [newCounsellorName,new_counsellor_email]
-      );
-       const newCounsellor = await queryDB(
-      `SELECT user_id FROM users WHERE email = ? AND user_type = 'counsellor' LIMIT 1`,
-      [new_counsellor_email]
-    );
+          await db.execute(
+            `INSERT INTO users (name, email, user_type, status) VALUES (?,  ?, 'counsellor', 1)`,
+            [newCounsellorName, new_counsellor_email]
+          );
+          const newCounsellor = await queryDB(
+            `SELECT user_id FROM users WHERE email = ? AND user_type = 'counsellor' LIMIT 1`,
+            [new_counsellor_email]
+          );
 
 
-      final_temple_id = null; // New counsellor has no temple yet
-      finally_counsller_id = newCounsellor.user_id;;
-    }
-  }
-  // CASE 3: Neither provided
-  else {
-    return resp.json({
-      status: 0,
-      code: 422,
-      message: ["Counsellor required for student"],
-    });
-  }
-  break;
+          final_temple_id = null; // New counsellor has no temple yet
+          finally_counsller_id = newCounsellor.user_id;;
+        }
+      }
+      // CASE 3: Neither provided
+      else {
+        return resp.json({
+          status: 0,
+          code: 422,
+          message: ["Counsellor required for student"],
+        });
+      }
+      break;
     case "counsellor":
       finally_counsller_id = null;
       final_temple_id = temple_id;
@@ -1637,20 +1735,20 @@ const registerUser = async (
   birthday
 ) => {
   const registration = await insertRecord(
-    "users",[
-      "email",
-      "name",
-      "mobile",
-      "temple_id",
-      "user_type",
-      "status",
-      "added_from",
-      "device_name",
-      "access_token",
-      "google_id",
-      "profile",
-      "birthday"
-    ],
+    "users", [
+    "email",
+    "name",
+    "mobile",
+    "temple_id",
+    "user_type",
+    "status",
+    "added_from",
+    "device_name",
+    "access_token",
+    "google_id",
+    "profile",
+    "birthday"
+  ],
     [
       email,
       name,
@@ -1673,18 +1771,18 @@ const registerUser = async (
     if (user_type === "student") {
       await insertRecord(
         "user_counsellors",
-        ["user_id", "counsller_id","counsllor_type"],
-        [user_id, counsller_id,"primary"],
+        ["user_id", "counsller_id", "counsllor_type"],
+        [user_id, counsller_id, "primary"],
       );
     }
 
-   await db.query(
-  `INSERT INTO fix_activities 
-   (user_id,target, name, description, unit, activity_type, own_by)
-   SELECT ?,a.target, a.name, a.description, a.unit, a.activity_type, 0
+    await db.query(
+      `INSERT INTO fix_activities 
+   (user_id, master_activity_id, target, name, description, unit, activity_type, own_by)
+   SELECT ?, a.id, a.target, a.name, a.description, a.unit, a.activity_type, 0
    FROM activities a
    WHERE  a.status = 1 AND NOT EXISTS (SELECT 1 FROM fix_activities f  WHERE f.user_id = ? AND f.name = a.name)`,
-   [user_id, user_id]);
+      [user_id, user_id]);
 
     if (user_type === "student" && counsller_id) {
       try {
@@ -1744,38 +1842,38 @@ const registerUser = async (
   }
 };
 export const olduserProfile = asyncHandler(async (req, resp) => {
-  const { user_id} = mergeParam(req);
+  const { user_id } = mergeParam(req);
   const { isValid, errors } = validateFields(mergeParam(req), {
     user_id: ["required"],
-     });
+  });
 
   if (!isValid) return resp.json({ status: 0, code: 422, message: errors });
-     const user= await queryDB(
-        `SELECT user_id, name, email,mobile,temple_id,user_type,
-         (SELECT counsller_id FROM user_counsellors WHERE user_id = users.user_id)
+  const user = await queryDB(
+    `SELECT user_id, name, email,mobile,temple_id,user_type,
+         (SELECT counsller_id FROM user_counsellors WHERE user_id = users.user_id LIMIT 1)
           AS counsller_id FROM 
           users WHERE user_id = ?`,
-        [user_id],
-      );
+    [user_id],
+  );
 
-    if(!user){
-      return resp.json({
-        status: 0,
-        code: 404,        
+  if (!user) {
+    return resp.json({
+      status: 0,
+      code: 404,
 
-        message: ["User not found"],
-      });
-    }
-    const rewards = await getUserRewards(user_id);
+      message: ["User not found"],
+    });
+  }
+  const rewards = await getUserRewards(user_id);
   return resp.json({
     status: 1,
     code: 200,
-    data: {user,rewards},
+    data: { user, rewards },
     message: ["User data fetched successfully"],
-  }); 
-
   });
-  export const userProfile = asyncHandler(async (req, resp) => {
+
+});
+export const userProfile = asyncHandler(async (req, resp) => {
   const { user_id } = mergeParam(req);
 
   const { isValid, errors } = validateFields({ user_id }, {
@@ -1801,7 +1899,16 @@ export const olduserProfile = asyncHandler(async (req, resp) => {
       u.email,
       u.mobile,
       u.profile,
-      u.temple_id
+      u.birthday as dob,
+      u.temple_id,
+    (SELECT cl.name 
+       FROM user_assignments ua 
+       INNER JOIN center_list cl ON cl.center_id = ua.center_id 
+       WHERE ua.user_id = u.user_id LIMIT 1) as center_name,
+      (SELECT ll.name 
+       FROM user_assignments ua 
+       INNER JOIN labels_list ll ON ll.id = ua.label_id 
+       WHERE ua.user_id = u.user_id LIMIT 1) as label_name
     FROM users u
     WHERE u.user_id = ?
     `,
@@ -1826,6 +1933,8 @@ export const olduserProfile = asyncHandler(async (req, resp) => {
     SELECT 
       uc.counsller_id AS mentor_id,
       usr.name,
+      usr.email,
+      usr.birthday AS dob,
       usr.auto_report_status,
       usr.report_frequency_days,
      
@@ -1837,7 +1946,7 @@ export const olduserProfile = asyncHandler(async (req, resp) => {
     `,
     [user_id]
   );
-// LEFT JOIN temples t ON usr.temple_id = t.temple_id
+  // LEFT JOIN temples t ON usr.temple_id = t.temple_id
   /* ---------------------------
      FETCH REWARDS (your function)
   ----------------------------*/
@@ -1851,20 +1960,30 @@ export const olduserProfile = asyncHandler(async (req, resp) => {
     code: 200,
     data: {
       user: {
-        reminder_status:userData.reminder_status,
-        auto_report_status:userData.auto_report_status,
-        report_frequency_days: userData.report_frequency_days ,
+        reminder_status: userData.reminder_status,
+        auto_report_status: userData.auto_report_status,
+        report_frequency_days: userData.report_frequency_days,
         name: userData.name,
         email: userData.email,
         mobile: userData.mobile,
         profile: userData.profile,
+        dob: userData.dob,
+        center_name: userData.center_name,
+        label_name: userData.label_name
       },
 
       mentors: mentors.map((m) => ({
         mentor_id: m.mentor_id,
-        name: m.name,
+        mentor_name: m.name,
+        mentor_email: m.email,
+        mentor_dob: m.dob,
         temple: m.temple || "",
-        avatar: m.avatar,
+        mentor_profile_image: m.avatar,
+        // Also keep old keys just in case other parts of the app use them
+        name: m.name,
+        email: m.email,
+        dob: m.dob,
+        avatar: m.avatar
       })),
 
       rewards: rewards || [],
@@ -1939,16 +2058,16 @@ export const editProfile = asyncHandler(async (req, resp) => {
   /* ---------------------------
      FETCH UPDATED USER
   ----------------------------*/
-  
-  
+
+
   return resp.json({
     status: 1,
     code: 200,
     message: ["Profile updated successfully"],
-    
+
   });
 });
-  const getUserRewards = async (user_id) => {
+const getUserRewards = async (user_id) => {
 
   const [rows] = await db.execute(
     `SELECT fa.activity_id,r.reward_name,fa.name as activity_name,fa.activity_type,r.target_value,r.required_days, 
@@ -1978,114 +2097,119 @@ JOIN daily_report dr
 }
 
 export const UsernotificationList = asyncHandler(async (req, resp) => {
-    // 1. Merge and Validate
-    const params = mergeParam(req);
-    const { user_id } = params;
-    // Default page_no to 1 if missing or 0
-    const page_no = parseInt(params.page_no) || 1;
+  // 1. Merge and Validate
+  const params = mergeParam(req);
+  const { user_id } = params;
+  // Default page_no to 1 if missing or 0
+  const page_no = parseInt(params.page_no) || 1;
 
-    const { isValid, errors } = validateFields(params, {
-        user_id: ["required"]
-    });
+  const { isValid, errors } = validateFields(params, {
+    user_id: ["required"]
+  });
 
-    if (!isValid) {
-        return resp.json({ status: 0, code: 422, message: errors });
-    }
+  if (!isValid) {
+    return resp.json({ status: 0, code: 422, message: errors });
+  }
 
-    // 2. Pagination Logic
-    const limit = 10;
-    const start = (page_no - 1) * limit;
+  // 2. Pagination Logic
+  const limit = 10;
+  const start = (page_no - 1) * limit;
 
-    // 3. Count Total Notifications (Corrected params consistency)
-    const [totalResult] = await db.execute(
-        `SELECT COUNT(*) AS total FROM notifications WHERE panel_to = 'student' AND receive_id = ?`,
-        [user_id]
-    );
-    const totalCount = totalResult[0]?.total || 0;
-    const total_page = Math.ceil(totalCount / limit) || 1; 
+  // 3. Count Total Notifications (Corrected params consistency)
+  const [totalResult] = await db.execute(
+    `SELECT COUNT(*) AS total FROM notifications WHERE panel_to = 'student' AND receive_id = ?`,
+    [user_id]
+  );
+  const totalCount = totalResult[0]?.total || 0;
+  const total_page = Math.ceil(totalCount / limit) || 1;
 
-    // 4. Fetch Paginated Notifications
-    const [rows] = await db.execute(
-        `SELECT id, heading, description, module_name, panel_to, panel_from, receive_id, status, created_at, href
+  // 4. Fetch Paginated Notifications
+  const [rows] = await db.execute(
+    `SELECT id, heading, description, module_name, panel_to, panel_from, receive_id, status, created_at, href
          FROM notifications 
          WHERE panel_to = 'student' AND receive_id = ? 
          ORDER BY id DESC 
          LIMIT ?, ?`,
-        [user_id, String(start), String(limit)]
-    );
+    [user_id, String(start), String(limit)]
+  );
 
-    // 5. Mark notifications as read (Corrected 'rider_id' to 'user_id')
-    // Doing this after fetching ensures we capture the current batch
-    if (rows.length > 0) {
-        await db.execute(
-            `UPDATE notifications SET status = '1' 
+  // 5. Mark notifications as read (Corrected 'rider_id' to 'user_id')
+  // Doing this after fetching ensures we capture the current batch
+  if (rows.length > 0) {
+    await db.execute(
+      `UPDATE notifications SET status = '1' 
              WHERE status = '0' AND panel_to = 'student' AND receive_id = ?`,
-            [user_id]
-        );
-    }
-    
-    return resp.json({
-        status: 1, 
-        code: 200, 
-        message: "Notification list fetched successfully", 
-        data: rows, 
-        total_page: total_page, 
-        totalRows: totalCount
-    });
+      [user_id]
+    );
+  }
+
+  return resp.json({
+    status: 1,
+    code: 200,
+    message: "Notification list fetched successfully",
+    data: rows,
+    total_page: total_page,
+    totalRows: totalCount
+  });
 });
 
 
-export const oldStudentActivitiesAnalytics = asyncHandler(async (req,res)=>{
- const {  user_id,start_date,end_date,filter='7days'    } = mergeParam(req);
-     const { isValid, errors } = validateFields(mergeParam(req), {
-      user_id: ["required"],
-     
-    });
+export const oldStudentActivitiesAnalytics = asyncHandler(async (req, res) => {
+  const { user_id, start_date, end_date, filter = '7days' } = mergeParam(req);
+  const { isValid, errors } = validateFields(mergeParam(req), {
+    user_id: ["required"],
 
-    if (!isValid)      return res.json({ status: 0, code:422, message: errors });
-    let start_formatted_date;
-    let end_formatted_date;
+  });
 
-const today_moment = moment();
-    switch (filter) {
+  if (!isValid) return res.json({ status: 0, code: 422, message: errors });
+  let start_formatted_date;
+  let end_formatted_date;
 
-      case "30days":
-        end_formatted_date = today_moment.format("YYYY-MM-DD");
-        start_formatted_date = today_moment.clone().subtract(29, "days").format("YYYY-MM-DD");
-        break;
+  const today_moment = moment();
+  switch (filter) {
 
-      case "custom":
-        start_formatted_date = moment(start_date).format("YYYY-MM-DD");
-        end_formatted_date = moment(end_date).format("YYYY-MM-DD");
-        break;
+    case "30days":
+      end_formatted_date = today_moment.format("YYYY-MM-DD");
+      start_formatted_date = today_moment.clone().subtract(29, "days").format("YYYY-MM-DD");
+      break;
 
-      case "7days":
-      default:
-        end_formatted_date = today_moment.format("YYYY-MM-DD");
-        start_formatted_date = today_moment.clone().subtract(6, "days").format("YYYY-MM-DD");
-    }
+    case "custom":
+      start_formatted_date = moment(start_date).format("YYYY-MM-DD");
+      end_formatted_date = moment(end_date).format("YYYY-MM-DD");
+      break;
+
+    case "2days":
+      end_formatted_date = today_moment.format("YYYY-MM-DD");
+      start_formatted_date = today_moment.clone().subtract(1, "days").format("YYYY-MM-DD");
+      break;
+
+    case "7days":
+    default:
+      end_formatted_date = today_moment.format("YYYY-MM-DD");
+      start_formatted_date = today_moment.clone().subtract(6, "days").format("YYYY-MM-DD");
+  }
 
 
-console.log("filter",filter,start_formatted_date,end_formatted_date)
-  
-const today = moment().format("YYYY-MM-DD");
+  console.log("filter", filter, start_formatted_date, end_formatted_date)
 
- if (moment(end_formatted_date).isAfter(today)) {
-  end_formatted_date = today;
-}
-let dates = [];
+  const today = moment().format("YYYY-MM-DD");
 
-let current = moment(start_formatted_date);
+  if (moment(end_formatted_date).isAfter(today)) {
+    end_formatted_date = today;
+  }
+  let dates = [];
 
-while (current.isSameOrBefore(end_formatted_date)) {
-  dates.push(current.format("YYYY-MM-DD"));
-  current.add(1, "days");
-}
+  let current = moment(start_formatted_date);
 
-// console.log(dates);
+  while (current.isSameOrBefore(end_formatted_date)) {
+    dates.push(current.format("YYYY-MM-DD"));
+    current.add(1, "days");
+  }
 
-      const [chartData] = await db.execute(
-      `
+  // console.log(dates);
+
+  const [chartData] = await db.execute(
+    `
       SELECT 
        DATE_FORMAT(dr.activity_date,'%Y-%m-%d') as date
        , 1 as count
@@ -2096,48 +2220,48 @@ from daily_report dr where
       order by dr.id ASC
 
       `,
-      [user_id,start_date,end_date]
-      );
-   const dataMap = {};
-chartData.forEach(item => {
-  dataMap[item.date] = item.count;
-});
+    [user_id, start_date, end_date]
+  );
+  const dataMap = {};
+  chartData.forEach(item => {
+    dataMap[item.date] = item.count;
+  });
   let currentStreak = 0;
   let bestStreak = 0;
 
-const mergedData = dates.map(date => {
+  const mergedData = dates.map(date => {
 
-  const count = dataMap[date] || 0;
+    const count = dataMap[date] || 0;
 
-  if (count === 1) {
-    currentStreak++;
-    bestStreak = Math.max(bestStreak, currentStreak);
-  } else {
-    currentStreak = 0;
-  }
+    if (count === 1) {
+      currentStreak++;
+      bestStreak = Math.max(bestStreak, currentStreak);
+    } else {
+      currentStreak = 0;
+    }
 
-  return {
-    date,
-    count
-  };
-});
+    return {
+      date,
+      count
+    };
+  });
 
 
-// merge with full date list
-// const mergedData = dates.map(date => ({
-//   date,
-//   count: dataMap[date] || 0
-// }));      
+  // merge with full date list
+  // const mergedData = dates.map(date => ({
+  //   date,
+  //   count: dataMap[date] || 0
+  // }));      
 
-    /* ---------------------------
-        Activity summary
-    ----------------------------*/
-    const [student_data] = await db.execute(
-      `
+  /* ---------------------------
+      Activity summary
+  ----------------------------*/
+  const [student_data] = await db.execute(
+    `
       SELECT
       
 CASE 
-    WHEN fa.activity_type IN ('numb','min')
+    WHEN fa.activity_type != 'time'
         THEN ROUND(AVG(CAST(dr.count AS DECIMAL(10,2))),2)
 
     WHEN fa.activity_type = 'time'
@@ -2165,30 +2289,31 @@ FROM fix_activities fa
 
   LEFT JOIN daily_report dr 
     ON dr.activity_id = fa.activity_id  AND dr.user_id = ?
+    AND DATE(dr.activity_date) BETWEEN ? AND ?
   JOIN users u ON u.user_id = ?
     WHERE
          fa.user_id = ? GROUP BY fa.activity_id
       `,
-      [user_id,user_id,user_id]
-    );
+    [user_id, start_formatted_date, end_formatted_date, user_id, user_id]
+  );
 
-    const attendance_days=student_data[0].attendance_count 
-   const total_days = moment(end_formatted_date).diff(moment(start_formatted_date), "days") + 1;
-   const performance_filter = ((attendance_days / total_days) * 100).toFixed(2);
-student_data[0].performance_filter = performance_filter;
-//
-student_data[0].bestStreak = bestStreak;
+  const attendance_days = student_data[0].attendance_count
+  const total_days = moment(end_formatted_date).diff(moment(start_formatted_date), "days") + 1;
+  const performance_filter = ((attendance_days / total_days) * 100).toFixed(2);
+  student_data[0].performance_filter = performance_filter;
+  //
+  student_data[0].bestStreak = bestStreak;
 
 
-// console.log(attendance_days,end_formatted_date,start_formatted_date,"student data",performance);
- return res.json({
-   status:1,
- data:{student_data,chart_data:mergedData}
-   //  data:{
-  //    ...activity[0],
-  //    history
-  //  }
- });
+  // console.log(attendance_days,end_formatted_date,start_formatted_date,"student data",performance);
+  return res.json({
+    status: 1,
+    data: { student_data, chart_data: mergedData }
+    //  data:{
+    //    ...activity[0],
+    //    history
+    //  }
+  });
 
 });
 
@@ -2223,6 +2348,14 @@ export const StudentActivitiesAnalytics = asyncHandler(async (req, res) => {
     case "custom":
       start_formatted_date = moment(start_date).format("YYYY-MM-DD");
       end_formatted_date = moment(end_date).format("YYYY-MM-DD");
+      break;
+
+    case "2days":
+      end_formatted_date = today_moment.format("YYYY-MM-DD");
+      start_formatted_date = today_moment
+        .clone()
+        .subtract(1, "days")
+        .format("YYYY-MM-DD");
       break;
 
     case "7days":
@@ -2286,7 +2419,7 @@ export const StudentActivitiesAnalytics = asyncHandler(async (req, res) => {
     `
     SELECT
       CASE 
-        WHEN fa.activity_type IN ('numb','min')
+        WHEN fa.activity_type != 'time'
           THEN ROUND(AVG(CAST(dr.count AS DECIMAL(10,2))),2)
 
         WHEN fa.activity_type = 'time'
@@ -2307,6 +2440,7 @@ export const StudentActivitiesAnalytics = asyncHandler(async (req, res) => {
     LEFT JOIN daily_report dr 
       ON dr.activity_id = fa.activity_id 
       AND dr.user_id = ?
+      AND DATE(dr.activity_date) BETWEEN ? AND ?
     WHERE fa.user_id = ?
     GROUP BY
     fa.activity_id,
@@ -2315,7 +2449,7 @@ export const StudentActivitiesAnalytics = asyncHandler(async (req, res) => {
       fa.unit,
       fa.activity_type
     `,
-    [user_id, user_id]
+    [user_id, start_formatted_date, end_formatted_date, user_id]
   );
 
   /* ---------------------------
@@ -2337,10 +2471,66 @@ export const StudentActivitiesAnalytics = asyncHandler(async (req, res) => {
     if (last > prev) trend = "+";
     else if (last < prev) trend = "-";
 
+    /* -------- Calculate Accurate Average -------- */
+    const validValues = daily_data.filter(d => {
+      const v = d.count;
+      if (typeof v === 'string' && v.includes(':')) return v !== '00:00:00' && v !== '00:00';
+      return Number(v) > 0;
+    });
+
+    let avgValue = 0;
+    if (validValues.length > 0) {
+      if (activity.activity_type === "time") {
+        let sumSin = 0;
+        let sumCos = 0;
+
+        validValues.forEach(d => {
+          let mins = 0;
+          const v = d.count;
+          if (typeof v === 'number' || (typeof v === 'string' && !isNaN(v))) {
+            mins = Number(v);
+          } else if (typeof v === 'string') {
+            let timeStr = v.toUpperCase().trim();
+            const isPM = timeStr.includes('PM');
+            const isAM = timeStr.includes('AM');
+            timeStr = timeStr.replace('AM', '').replace('PM', '').trim();
+            const parts = timeStr.split(':').map(Number);
+            let h = parts[0] || 0;
+            let m = parts[1] || 0;
+            if (isPM && h < 12) h += 12;
+            if (isAM && h === 12) h = 0;
+            mins = h * 60 + m;
+          }
+
+          const angle = (mins / 1440) * 2 * Math.PI;
+          sumSin += Math.sin(angle);
+          sumCos += Math.cos(angle);
+        });
+
+        let avgAngle = Math.atan2(sumSin / validValues.length, sumCos / validValues.length);
+        if (avgAngle < 0) avgAngle += 2 * Math.PI;
+
+        const avgMins = Math.round((avgAngle / (2 * Math.PI)) * 1440) % 1440;
+        let h = Math.floor(avgMins / 60);
+        const m = avgMins % 60;
+        const period = h >= 12 ? 'PM' : 'AM';
+        h = h % 12;
+        h = h ? h : 12; // convert 0 to 12
+
+        avgValue = `${h}:${String(m).padStart(2, '0')} ${period}`;
+      } else {
+        const total = validValues.reduce((sum, d) => sum + Number(d.count), 0);
+        avgValue = total / daily_data.length;
+        if (avgValue % 1 !== 0) avgValue = parseFloat(avgValue.toFixed(2));
+      }
+    }
+    activity.average_value = avgValue;
+
     /* -------- Label Logic -------- */
     let label = "";
     if (activity.activity_type === "time") label = "Avg. Time";
     else if (activity.unit === "min") label = "Avg. Minutes";
+    else if (activity.unit === "hours") label = "Avg. Hours";
     else label = "Avg. Count";
 
     return {
@@ -2376,7 +2566,7 @@ export const acontentListStudent = asyncHandler(async (req, resp) => {
       rowSelected,
       content_type   // optional filter
     } = mergeParam(req);
-    console.log("content_type",content_type)
+    console.log("content_type", content_type)
 
     // ✅ Validation
     const { isValid, errors } = validateFields(mergeParam(req), {
@@ -2436,7 +2626,7 @@ export const acontentListStudent = asyncHandler(async (req, resp) => {
     const offset = (page_no - 1) * limit;
 
     // ✅ Main Query
-   let query=`SELECT 
+    let query = `SELECT 
         c.id,
         c.content_type,
         c.content,
@@ -2448,7 +2638,7 @@ export const acontentListStudent = asyncHandler(async (req, resp) => {
       GROUP BY c.id
       ORDER BY c.created_at DESC
       LIMIT ? OFFSET ?`;
-      console.log("query",query)
+    console.log("query", query)
     const [data] = await db.execute(
       query,
       [...paramsArr, limit, offset]
@@ -2620,7 +2810,7 @@ export const contentListStudent = asyncHandler(async (req, resp) => {
       data,
       total_page,
       total,
-         });
+    });
 
   } catch (error) {
     console.error("Error fetching content list:", error);
@@ -2679,7 +2869,7 @@ export const submitAppFeedback = asyncHandler(async (req, resp) => {
 
     // Securely Insert to database including the new "name" column!
     const query = `INSERT INTO app_feedback (user_id, name, message, status) VALUES (?, ?, ?, 1)`;
-    
+
     // We provide a fallback 'Unknown User' just to ensure it never crashes if the name fails to send
     const insertResult = await db.execute(query, [user_id, name || 'Unknown User', message.trim()]);
 
@@ -2698,6 +2888,142 @@ export const submitAppFeedback = asyncHandler(async (req, resp) => {
       status: 0,
       code: 500,
       message: ["Internal server error"]
+    });
+  }
+});
+
+export const uploadProfileImage = asyncHandler(async (req, resp) => {
+  const { user_id } = mergeParam(req);
+
+  if (!user_id) {
+    return resp.json({ status: 0, code: 422, message: ["user_id is required"] });
+  }
+
+  if (!req.files || !req.files.profile || !req.files.profile.length) {
+    return resp.json({ status: 0, code: 422, message: ["No profile image uploaded"] });
+  }
+
+  const fileUrl = req.files.profile[0].file_url;
+
+  await db.execute(
+    `UPDATE users SET profile = ? WHERE user_id = ?`,
+    [fileUrl, user_id]
+  );
+
+  return resp.json({
+    status: 1,
+    code: 200,
+    message: ["Profile image uploaded successfully"],
+    data: {
+      profile_image: fileUrl
+    }
+  });
+});
+
+export const removeProfileImage = asyncHandler(async (req, resp) => {
+  const { user_id } = mergeParam(req);
+
+  if (!user_id) {
+    return resp.json({ status: 0, code: 422, message: ["user_id is required"] });
+  }
+
+  await db.execute(
+    `UPDATE users SET profile = NULL WHERE user_id = ?`,
+    [user_id]
+  );
+
+  return resp.json({
+    status: 1,
+    code: 200,
+    message: ["Profile image removed successfully"],
+    data: null
+  });
+});
+
+export const calculateDailySadhanaScore = async (user_id, activity_date) => {
+  const targetDateIST = activity_date
+    ? moment(activity_date).format("YYYY-MM-DD")
+    : moment().utcOffset('+05:30').format("YYYY-MM-DD");
+
+  try {
+    // 1. Determine student's center_id for custom rule precedence
+    const [centerRows] = await db.execute(
+      `SELECT center_id FROM user_assignments WHERE user_id = ? ORDER BY id DESC LIMIT 1`,
+      [user_id]
+    );
+    const center_id = centerRows.length > 0 && centerRows[0].center_id !== null ? centerRows[0].center_id : 0;
+
+    // 2. Get Max Possible Marks (Handles name-fallback and Center precedence in pure SQL)
+    const [maxMarksResult] = await db.execute(`
+      SELECT SUM(COALESCE(specific_rule.marks, global_rule.marks)) as max_marks
+      FROM fix_activities f
+      LEFT JOIN marking_rules specific_rule 
+        ON specific_rule.master_activity_id = f.master_activity_id
+        AND specific_rule.status = 1 
+        AND specific_rule.frequency = 'daily' 
+        AND specific_rule.is_max_marks = 1 
+        AND specific_rule.center_id = ?
+      LEFT JOIN marking_rules global_rule 
+        ON global_rule.master_activity_id = f.master_activity_id 
+        AND global_rule.status = 1 
+        AND global_rule.frequency = 'daily' 
+        AND global_rule.is_max_marks = 1 
+        AND global_rule.center_id = 0
+      WHERE f.user_id = ?
+    `, [center_id, user_id]);
+
+    // 3. Fetch Today's Total Earned Marks
+    const [earnedMarksResult] = await db.execute(`
+      SELECT SUM(marks) as earned_marks 
+      FROM daily_report 
+      WHERE user_id = ? AND DATE(activity_date) = ?
+    `, [user_id, targetDateIST]);
+
+    // 4. Calculate Percentage and Return
+    const totalPossibleMarks = Number(maxMarksResult[0]?.max_marks) || 0;
+    const totalEarnedMarks = Number(earnedMarksResult[0]?.earned_marks) || 0;
+
+    let percentage = 0;
+    if (totalPossibleMarks > 0) {
+      percentage = Math.round((totalEarnedMarks / totalPossibleMarks) * 100);
+      if (percentage > 100) percentage = 100;
+    }
+
+    console.log(`Center: ${center_id}, Earned: ${totalEarnedMarks}, Max: ${totalPossibleMarks}, %: ${percentage}`);
+
+    return { totalEarnedMarks, totalPossibleMarks, percentage };
+
+  } catch (error) {
+    console.error("Error calculating daily score:", error);
+    return { totalEarnedMarks: 0, totalPossibleMarks: 0, percentage: 0 };
+  }
+};
+
+
+export const getDailyScore = asyncHandler(async (req, resp) => {
+  const { user_id, activity_date } = mergeParam(req);
+  if (!user_id) {
+    return resp.json({ status: 0, code: 422, message: ["user_id is required"] });
+  }
+
+  try {
+    const scoreData = await calculateDailySadhanaScore(user_id, activity_date);
+    return resp.json({
+      status: 1,
+      code: 200,
+      message: ["Daily score fetched successfully"],
+      data: {
+        earnedMarks: scoreData.totalEarnedMarks,
+        maxMarks: scoreData.totalPossibleMarks,
+        percentage: scoreData.percentage
+      }
+    });
+  } catch (err) {
+    console.error("Error fetching daily score:", err);
+    return resp.json({
+      status: 0,
+      code: 500,
+      message: ["Failed to calculate daily score"]
     });
   }
 });
