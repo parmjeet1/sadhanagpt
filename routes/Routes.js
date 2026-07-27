@@ -9,8 +9,8 @@ import { addCenter, addContent, addLable, addNote, addRewardRules, aiReport, ass
 import { handleFileUpload } from "../utils/fileUpload.js";
 import { sendBulknEmails } from "../SadhanaGPT/cronjobs/Email-notificatiion.js";
 import { irregularMenteesList, toggleMenteeNotification } from "../SadhanaGPT/Mentors/NotificationController.js";
-import { assignActivitiesToStudents, getMentorSelectableActivities, createCustomActivity, assignActivitiesToGroup, deassignActivitiesFromGroup } from "../SadhanaGPT/Controllers/custom activities/AssingActvtiesController.js";
-import { addMarkingRule, saveMarkingSchemeBatch, getMarkingRules } from "../SadhanaGPT/Controllers/Marking Rules/MarkingController.js";
+import { assignActivitiesToStudents, getMentorSelectableActivities, createCustomActivity, assignActivitiesToGroup, deassignActivitiesFromGroup, deleteCustomActivity, deleteAssignedCustomActivity, getGroupSubgroupList } from "../SadhanaGPT/Controllers/custom activities/AssingActvtiesController.js";
+import { addMarkingRule, saveMarkingSchemeBatch, getMarkingRules, getSchemesList, createMarkingScheme, getSchemeActivitiesList, deleteMarkingScheme, updateMarkingScheme } from "../SadhanaGPT/Controllers/Marking Rules/MarkingController.js";
 import { getStudentRank } from '../SadhanaGPT/Controllers/SummaryData/showRank.js';
 import { getFollowUpStudents } from '../SadhanaGPT/Controllers/SummaryData/followUpStudents.js';
 
@@ -166,10 +166,17 @@ const LoggedinRoute = [
     { method: 'post', path: '/assign-group-activities', handler: assignActivitiesToGroup, role: "counsellor" },
     { method: 'post', path: '/deassign-group-activities', handler: deassignActivitiesFromGroup, role: "counsellor" },
     { method: 'post', path: '/create-custom-activity', handler: createCustomActivity, role: "counsellor" },
+    { method: 'post', path: '/delete-custom-activity', handler: deleteCustomActivity, role: "counsellor" },
+    { method: 'post', path: '/delete-assigned-custom-activity', handler: deleteAssignedCustomActivity, role: "counsellor" },
+    { method: 'get', path: '/group-subgroup-list', handler: getGroupSubgroupList, role: "counsellor" },
     { method: 'post', path: '/add-marking-rule', handler: addMarkingRule, role: "counsellor" },
     { method: 'post', path: '/save-marking-scheme', handler: saveMarkingSchemeBatch , role: "counsellor" },
     { method: 'post', path: '/marking-rules', handler: getMarkingRules , role: "counsellor" },
-    
+    { method: 'post', path: '/scheme-list', handler: getSchemesList , role: "counsellor" },
+    { method: 'post', path: '/create-marking-scheme', handler: createMarkingScheme, role: "counsellor" },
+    { method: 'post', path: '/scheme-activities-list', handler: getSchemeActivitiesList, role: "counsellor" },
+    { method: 'post', path: '/delete-marking-scheme', handler: deleteMarkingScheme, role: "counsellor" },
+    { method: 'post', path: '/update-marking-scheme', handler: updateMarkingScheme, role: "counsellor" },
     { method: 'get', path: '/student-rank', handler: getStudentRank, role: "counsellor" },
     { method: 'get', path: '/student-followup', handler: getFollowUpStudents, role: "counsellor" },
     { method: 'post', path: '/create-custom-activity', handler: createCustomActivity }

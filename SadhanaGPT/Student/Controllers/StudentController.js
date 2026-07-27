@@ -61,7 +61,7 @@ const calculateBestMarks = (rawCount, rules, activityType, unit, activityName) =
     } else {
       // Compare as pure numbers (handles both normal counts AND time rules stored as raw minutes like '135')
       cCount = rawCountNum;
-      ruleVal = Number(ruleVal);
+      ruleVal = parseFloat(ruleVal);
     }
 
     let isMatched = false;
@@ -1113,27 +1113,42 @@ export const addSadhna = asyncHandler(async (req, resp) => {
       }
       let masterId = activityInfo.master_activity_id;
 
-      if (masterId) {
-        // 4. QUERY: Find out which Center (Group) this student belongs to.
-        // We need this because different centers might have custom scoring rules for the same activity!
+      if (masterId && Number(masterId) > 0) {
+        // 4. QUERY: Find out which Center (Group) and Subgroup (Label) this student belongs to.
         const [[studentAssignment]] = await db.execute(
-          `SELECT center_id FROM user_assignments WHERE user_id = ? ORDER BY id DESC LIMIT 1`,
+          `SELECT center_id, label_id FROM user_assignments WHERE user_id = ? ORDER BY id DESC LIMIT 1`,
           [user_id]
         );
-        const center_id = studentAssignment?.center_id;
+        
+        let schemeId = 1;
+        if (studentAssignment) {
+          const center_id = studentAssignment.center_id;
+          const label_id = studentAssignment.label_id;
+          if (label_id > 0) {
+            const [labelDetail] = await db.query("SELECT marking_scheme_id FROM labels_list WHERE id = ?", [label_id]);
+            if (labelDetail && labelDetail[0]?.marking_scheme_id) {
+              schemeId = labelDetail[0].marking_scheme_id;
+            }
+          }
+          if (schemeId === 1 && center_id > 0) {
+            const [centerDetail] = await db.query("SELECT marking_scheme_id FROM center_list WHERE center_id = ?", [center_id]);
+            if (centerDetail && centerDetail[0]?.marking_scheme_id) {
+              schemeId = centerDetail[0].marking_scheme_id;
+            }
+          }
+        }
 
         // 5. QUERY: Get all the scoring rules for this specific activity. 
-        // It looks for rules assigned to the student's Center first, and falls back to global default rules (Center 0) if none exist.
-        // It orders by center_id DESC so the specific center rules are prioritized at the top of the list!
+        // It looks for rules assigned to the student's resolved scheme ID first, and falls back to system default rules (Center 1) if none exist.
         const [fetchedRules] = await db.execute(
           `SELECT condition_operator, condition_value, marks, center_id, frequency
            FROM marking_rules 
-           WHERE center_id IN (?, 0)
+           WHERE center_id IN (?, 1)
              AND master_activity_id = ? 
              AND status = 1 
              AND frequency = 'daily'
            ORDER BY center_id = ? DESC`,
-          [center_id || 0, masterId, center_id || 0]
+          [schemeId, masterId, schemeId]
         );
 
         let rules = fetchedRules;
@@ -2946,31 +2961,42 @@ export const calculateDailySadhanaScore = async (user_id, activity_date) => {
     : moment().utcOffset('+05:30').format("YYYY-MM-DD");
 
   try {
-    // 1. Determine student's center_id for custom rule precedence
+    // 1. Determine student's center_id and label_id for custom rule precedence
     const [centerRows] = await db.execute(
-      `SELECT center_id FROM user_assignments WHERE user_id = ? ORDER BY id DESC LIMIT 1`,
+      `SELECT center_id, label_id FROM user_assignments WHERE user_id = ? ORDER BY id DESC LIMIT 1`,
       [user_id]
     );
     const center_id = centerRows.length > 0 && centerRows[0].center_id !== null ? centerRows[0].center_id : 0;
+    const label_id = centerRows.length > 0 && centerRows[0].label_id !== null ? centerRows[0].label_id : 0;
 
-    // 2. Get Max Possible Marks (Handles name-fallback and Center precedence in pure SQL)
+    // Resolve the active marking scheme ID for this user (subgroup custom scheme precedence, then group custom scheme, fallback to default 1)
+    let scheme_id = 1;
+    if (label_id > 0) {
+      const [labelDetail] = await db.query("SELECT marking_scheme_id FROM labels_list WHERE id = ?", [label_id]);
+      if (labelDetail && labelDetail[0]?.marking_scheme_id) {
+        scheme_id = labelDetail[0].marking_scheme_id;
+      }
+    }
+    if (scheme_id === 1 && center_id > 0) {
+      const [centerDetail] = await db.query("SELECT marking_scheme_id FROM center_list WHERE center_id = ?", [center_id]);
+      if (centerDetail && centerDetail[0]?.marking_scheme_id) {
+        scheme_id = centerDetail[0].marking_scheme_id;
+      }
+    }
+
+    // 2. Get Max Possible Marks (Handles name-fallback and Center precedence in pure SQL using MAX)
     const [maxMarksResult] = await db.execute(`
-      SELECT SUM(COALESCE(specific_rule.marks, global_rule.marks)) as max_marks
-      FROM fix_activities f
-      LEFT JOIN marking_rules specific_rule 
-        ON specific_rule.master_activity_id = f.master_activity_id
-        AND specific_rule.status = 1 
-        AND specific_rule.frequency = 'daily' 
-        AND specific_rule.is_max_marks = 1 
-        AND specific_rule.center_id = ?
-      LEFT JOIN marking_rules global_rule 
-        ON global_rule.master_activity_id = f.master_activity_id 
-        AND global_rule.status = 1 
-        AND global_rule.frequency = 'daily' 
-        AND global_rule.is_max_marks = 1 
-        AND global_rule.center_id = 0
-      WHERE f.user_id = ?
-    `, [center_id, user_id]);
+      SELECT SUM(max_marks) as max_marks
+      FROM (
+        SELECT f.master_activity_id, 
+               COALESCE(
+                 (SELECT MAX(marks) FROM marking_rules WHERE master_activity_id = f.master_activity_id AND status = 1 AND frequency = 'daily' AND center_id = ?),
+                 (SELECT MAX(marks) FROM marking_rules WHERE master_activity_id = f.master_activity_id AND status = 1 AND frequency = 'daily' AND center_id = 1)
+               ) as max_marks
+        FROM fix_activities f
+        WHERE f.user_id = ? AND f.master_activity_id IS NOT NULL AND f.master_activity_id > 0
+      ) temp
+    `, [scheme_id, user_id]);
 
     // 3. Fetch Today's Total Earned Marks
     const [earnedMarksResult] = await db.execute(`
@@ -2989,7 +3015,7 @@ export const calculateDailySadhanaScore = async (user_id, activity_date) => {
       if (percentage > 100) percentage = 100;
     }
 
-    console.log(`Center: ${center_id}, Earned: ${totalEarnedMarks}, Max: ${totalPossibleMarks}, %: ${percentage}`);
+    console.log(`User: ${user_id}, Center: ${center_id}, Scheme: ${scheme_id}, Earned: ${totalEarnedMarks}, Max: ${totalPossibleMarks}, %: ${percentage}`);
 
     return { totalEarnedMarks, totalPossibleMarks, percentage };
 

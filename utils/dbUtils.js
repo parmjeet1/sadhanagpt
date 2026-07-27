@@ -198,8 +198,8 @@ export const getPaginatedData = async ({
 
   // Final SQL query
   const query = `SELECT SQL_CALC_FOUND_ROWS ${columns} FROM ${tableName}${joinClause}${finalWhereCondition} ORDER BY ${sortColumn} ${sortOrder} LIMIT ${start}, ${parseInt(limit, 10)}`;
-console.log("Executing Paginated Query:", query, queryParams);
   try {
+    // console.log("final query",query)
     const [rows] = await db.execute(query, queryParams);
     const [[{ total }]] = await db.query('SELECT FOUND_ROWS() AS total');
     const totalPage = Math.max(Math.ceil(total / limit), 1);

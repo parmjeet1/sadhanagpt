@@ -12,7 +12,8 @@ export const getMentorSelectableActivities = asyncHandler(async (req, resp) => {
       search_text = "",
       rowSelected,
       center_id = "",
-      label_id = ""
+      label_id = "",
+      only_available = false
     } = mergeParam(req);
 
     const { isValid, errors } = validateFields(mergeParam(req), {
@@ -23,33 +24,29 @@ export const getMentorSelectableActivities = asyncHandler(async (req, resp) => {
 
     const safeCenterId = db.escape(center_id);
     const safeLabelId = db.escape(label_id);
-
     const safeUserId = db.escape(user_id);
 
     const params = {
-      tableName: `(SELECT * FROM activities WHERE counsellor_id IS NULL OR counsellor_id = ${safeUserId}) AS activities`,
-      columns: `id AS master_activity_id, name, 
-      description, unit, target, activity_type, counsellor_id,
-      CASE
-        WHEN activities.status = 1 THEN 1
-        WHEN (SELECT COUNT(*) FROM counselor_added_activities caa WHERE caa.master_activity_id = activities.id AND caa.center_id = ${safeCenterId} ${label_id ? `AND caa.label_id = ${safeLabelId}` : ""}) > 0 THEN 1
-        ELSE 0
-      END AS status,
-      CASE
-        WHEN activities.status = 1 THEN 'default'
-        WHEN activities.status = 2 THEN 'selectable'
-        ELSE 'unknown'
-      END AS status_type
-     `,
-      sortColumn: "id",
+      tableName: `(
+        SELECT *, id AS master_activity_id,
+        CASE
+          WHEN activities.status = 1 THEN 1
+          WHEN (SELECT COUNT(*) FROM counselor_added_activities caa WHERE caa.master_activity_id = activities.id AND caa.center_id = ${safeCenterId} ${label_id ? `AND caa.label_id = ${safeLabelId}` : ""}) > 0 THEN 1
+          ELSE 0
+        END AS assignment_status
+        FROM activities 
+        WHERE (counsellor_id IS NULL OR counsellor_id = ${safeUserId})
+      ) AS activities`,
+      columns: `master_activity_id, name, description, unit, target, activity_type, counsellor_id, status AS original_status, assignment_status AS status`,
+      sortColumn: "master_activity_id",
       sortOrder: "ASC",
       page_no,
-      limit: rowSelected || 10,
+      limit: rowSelected || 15,
       liveSearchFields: ["name", "description"],
       liveSearchTexts: [search_text, search_text],
-      whereField: ["status"],
-      whereValue: [0],
-      whereOperator: ["!="],
+      whereField: only_available ? ["assignment_status", "status"] : ["status"],
+      whereValue: only_available ? [0, 0] : [0],
+      whereOperator: only_available ? ["=", "!="] : ["!="],
     };
 
     const result = await getPaginatedData(params);
@@ -213,41 +210,32 @@ export const assignActivitiesToStudents = asyncHandler(async (req, resp) => {
 
 export const createCustomActivity = asyncHandler(async (req, resp) => {
   try {
-    const { name, activity_type, target, counsellor_id } = mergeParam(req);
+    const { name, activity_type, target, counsellor_id, unit } = mergeParam(req);
     
     // 1. Basic validation
     const { isValid, errors } = validateFields(mergeParam(req), {
       name: ["required"],
       activity_type: ["required"],
-      counsellor_id: ["required"]
+      counsellor_id: ["required"],
+      unit: ["required"]
     });
 
     if (!isValid) return resp.json({ status: 0, code: 422, message: errors });
 
-        // 2. Map the Frontend Tracking Types to your Database types
-    let dbType = activity_type.toLowerCase();
-    let unit = '';
+    // Validate enum values
+    const validActivityTypes = ['yes_no', 'min', 'time', 'numb'];
+    const validUnits = ['min', 'rounds', 'page', 'time', 'boolean', 'hours'];
 
-    if (dbType === 'duration') {
-      dbType = 'time';
-      unit = 'mins'; // Saves 'mins' so you know this 30 means 30 minutes!
-    } 
-    else if (dbType === 'time') {
-      dbType = 'time';
-      unit = ''; // Or whatever unit you use for fixed times
-    } 
-    else if (dbType === 'count') {
-      dbType = 'numb';
-      unit = 'rounds'; // Or 'count'
-    } 
-    else if (dbType === 'yes/no') {
-      dbType = 'boolean';
-      unit = '';
+    if (!validActivityTypes.includes(activity_type)) {
+      return resp.json({ status: 0, code: 422, message: ["Invalid activity type."] });
+    }
+    if (!validUnits.includes(unit)) {
+      return resp.json({ status: 0, code: 422, message: ["Invalid unit."] });
     }
 
-    // 3. Insert into the main activities table with the 'unit' column
+    // 3. Insert into the main activities table
     const insertQuery = `INSERT INTO activities (name, activity_type, target, unit, counsellor_id, status) VALUES (?, ?, ?, ?, ?, ?)`;
-    const [result] = await db.query(insertQuery, [name, dbType, target || 0, unit, counsellor_id, 3]);
+    const [result] = await db.query(insertQuery, [name, activity_type, target || 0, unit, counsellor_id, 3]);
 
     return resp.json({
       status: 1,
@@ -458,6 +446,196 @@ export const deassignActivitiesFromGroup = asyncHandler(async (req, resp) => {
       status: 0,
       code: 500,
       message: ["Error removing activities from group."],
+    });
+  }
+});
+
+export const deleteCustomActivity = asyncHandler(async (req, resp) => {
+  try {
+    const { master_activity_id, user_id } = mergeParam(req);
+
+    const { isValid, errors } = validateFields(mergeParam(req), {
+      master_activity_id: ["required"],
+      user_id: ["required"],
+    });
+
+    if (!isValid) return resp.json({ status: 0, code: 422, message: errors });
+
+    // 1. Delete custom activity (status = 3) created by this counsellor
+    const deleteQuery = `DELETE FROM activities WHERE id = ? AND status = 3 AND counsellor_id = ?`;
+    const [result] = await db.query(deleteQuery, [master_activity_id, user_id]);
+
+    if (result.affectedRows > 0) {
+      // 2. Find all student assignments (activity_id) linked to this master activity
+      const [fixRecords] = await db.query(`SELECT activity_id FROM fix_activities WHERE master_activity_id = ?`, [master_activity_id]);
+
+      if (fixRecords.length > 0) {
+        const fixIds = fixRecords.map(r => r.activity_id);
+        
+        // 3. Delete student score histories from daily_report first
+        await db.query(`DELETE FROM daily_report WHERE activity_id IN (?)`, [fixIds]);
+        
+        // 4. Delete student assignments from fix_activities
+        await db.query(`DELETE FROM fix_activities WHERE master_activity_id = ?`, [master_activity_id]);
+      }
+
+      // 5. Delete group mappings from counselor_added_activities
+      await db.query(`DELETE FROM counselor_added_activities WHERE master_activity_id = ?`, [master_activity_id]);
+
+      return resp.json({
+        status: 1,
+        code: 200,
+        message: ["Custom activity deleted successfully from all records!"],
+      });
+    } else {
+      return resp.json({
+        status: 0,
+        code: 404,
+        message: ["Custom activity not found or not eligible for deletion."],
+      });
+    }
+  } catch (error) {
+    console.error("Error deleting custom activity:", error);
+    return resp.json({
+      status: 0,
+      code: 500,
+      message: ["Error deleting custom activity."],
+    });
+  }
+});
+
+export const deleteAssignedCustomActivity = asyncHandler(async (req, resp) => {
+  try {
+    const { center_id, label_id, master_activity_id } = mergeParam(req);
+
+    const { isValid, errors } = validateFields(mergeParam(req), {
+      center_id: ["required"],
+      master_activity_id: ["required"]
+    });
+
+    if (!isValid) return resp.json({ status: 0, code: 422, message: errors });
+
+    const safeLabelId = label_id ? label_id : null;
+
+    // 1. Delete from counselor_added_activities
+    let deleteCaaQuery = `DELETE FROM counselor_added_activities WHERE center_id = ? AND master_activity_id = ?`;
+    let deleteCaaParams = [center_id, master_activity_id];
+
+    if (safeLabelId) {
+      deleteCaaQuery += ` AND label_id = ?`;
+      deleteCaaParams.push(safeLabelId);
+    } else {
+      deleteCaaQuery += ` AND label_id IS NULL`;
+    }
+    await db.query(deleteCaaQuery, deleteCaaParams);
+
+    // 2. Fetch all students in this group/sub-group
+    let studentsQuery = `SELECT user_id FROM user_assignments WHERE center_id = ?`;
+    const studentsParams = [center_id];
+    
+    if (safeLabelId) {
+      studentsQuery += ` AND label_id = ?`;
+      studentsParams.push(safeLabelId);
+    }
+    const [students] = await db.query(studentsQuery, studentsParams);
+
+    if (students.length > 0) {
+      const studentIds = students.map(s => s.user_id);
+      const studentPlaceholders = studentIds.map(() => "?").join(",");
+
+      // 3. Find the activity_id (primary key) in fix_activities for these students
+      const selectFixQuery = `
+        SELECT activity_id FROM fix_activities 
+        WHERE master_activity_id = ? AND user_id IN (${studentPlaceholders})
+      `;
+      const [fixRecords] = await db.query(selectFixQuery, [master_activity_id, ...studentIds]);
+
+      if (fixRecords.length > 0) {
+        const fixIds = fixRecords.map(r => r.activity_id);
+        const fixPlaceholders = fixIds.map(() => "?").join(",");
+
+        // 4. Delete from daily_report
+        const deleteReportQuery = `DELETE FROM daily_report WHERE activity_id IN (${fixPlaceholders})`;
+        await db.query(deleteReportQuery, fixIds);
+
+        // 5. Delete from fix_activities
+        const deleteFixQuery = `DELETE FROM fix_activities WHERE activity_id IN (${fixPlaceholders})`;
+        await db.query(deleteFixQuery, fixIds);
+      }
+    }
+
+    return resp.json({
+      status: 1,
+      code: 200,
+      message: ["Assigned custom activity removed successfully from all records."]
+    });
+  } catch (error) {
+    console.error("Error deleting assigned custom activity:", error);
+    return resp.json({
+      status: 0,
+      code: 500,
+      message: ["Error deleting assigned custom activity."]
+    });
+  }
+});
+
+export const getGroupSubgroupList = asyncHandler(async (req, resp) => {
+  try {
+    const { user_id } = mergeParam(req);
+
+    const { isValid, errors } = validateFields(mergeParam(req), {
+      user_id: ["required"],
+    });
+
+    if (!isValid) return resp.json({ status: 0, code: 422, message: errors });
+
+    const safeUserId = db.escape(user_id);
+
+    // 1. Fetch all groups (centers) belonging to this counsellor
+    const centersQuery = `
+      SELECT cl.center_id, cl.name, cl.marking_scheme_id 
+      FROM center_list cl 
+      WHERE cl.counsller_id = ${safeUserId}
+      ORDER BY cl.created_at DESC
+    `;
+    const [centers] = await db.query(centersQuery);
+
+    if (centers.length > 0) {
+      const centerIds = centers.map(c => c.center_id);
+      
+      // 2. Fetch all labels for these centers and counselor
+      const labelsQuery = `
+        SELECT id AS label_id, name AS label_name, center_id, marking_scheme_id 
+        FROM labels_list 
+        WHERE center_id IN (${centerIds.map(() => '?').join(',')}) AND counsellor_id = ?
+        ORDER BY id DESC
+      `;
+      const [labels] = await db.query(labelsQuery, [...centerIds, user_id]);
+
+      // 3. Map labels to centers
+      centers.forEach(center => {
+        center.labels = labels
+          .filter(l => l.center_id === center.center_id)
+          .map(l => ({ 
+            id: l.label_id, 
+            name: l.label_name,
+            marking_scheme_id: l.marking_scheme_id 
+          }));
+      });
+    }
+
+    return resp.json({
+      status: 1,
+      code: 200,
+      message: ["Groups and subgroups fetched successfully!"],
+      data: centers,
+    });
+  } catch (error) {
+    console.error("Error fetching group and subgroup list:", error);
+    return resp.json({
+      status: 0,
+      code: 500,
+      message: ["Error fetching group and subgroup list."],
     });
   }
 });
